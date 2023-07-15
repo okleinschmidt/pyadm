@@ -1,12 +1,12 @@
 import click
 
-from pyadm.ldap.click_commands import ldap
+from pyadm.ldapcli.click_commands import ldapcli
 
 @click.group(help='PyADM')
 def cli():
     pass
 
-cli.add_command(ldap)
+cli.add_command(ldapcli)
 
 if __name__ == "__main__":
     cli()
