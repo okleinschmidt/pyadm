@@ -50,7 +50,7 @@ def ldapcli(server, base_dn, username, password):
 @click.option('--all', '-a', is_flag=True, default=None, help="Show all attributes")
 @click.option('--json', '-j', 'json_output', is_flag=True, default=None, help="Output as JSON")
 def user(username, json_output, all):
-    search_filter = f"(cn={username})"
+    search_filter = f"(uid={username})"
     try:
         if all:
             result = ldap_search(click_options, search_filter)
@@ -91,11 +91,11 @@ def user(username, json_output, all):
 
 # show groups a user belongs to
 @ldapcli.command("groups", help="Show groups for [USER]")
-@click.argument('user_cn')
+@click.argument('uid')
 @click.option('--all', '-a', is_flag=True, default=None, help="Show all attributes")
 @click.option('--json', '-j', 'json_output', is_flag=True, default=None, help="Output as JSON")
-def groups(user_cn, json_output, all):
-    search_filter = f"(cn={user_cn})"
+def groups(uid, json_output, all):
+    search_filter = f"(uid={uid})"
     try:
         if all:
             result = ldap_search(click_options, search_filter)
