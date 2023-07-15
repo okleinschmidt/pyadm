@@ -14,7 +14,7 @@ defaults = {
 
 click_options = {}
 
-def ldap_search(click_options, search_filter, attributes=[""]):
+def ldap_search(click_options, search_filter, attributes=[]):
     try: 
         ldap_connection = ldap.initialize(click_options["server"])
         ldap_connection.simple_bind(click_options["username"], click_options["password"])
@@ -63,12 +63,18 @@ def user(username, json_output, all):
             else:
                 if 'memberOf' in user_info:
                     user_info['memberOf'] = [f"- {group}" for group in user_info['memberOf']]
+                if 'objectClass' in user_info:
+                    user_info['objectClass'] = [f"- {objectclass}" for objectclass in user_info['objectClass']]
                
                 for attr, values in user_info.items():
                     if attr == 'memberOf':
                         print(f"{attr}:")
                         for group in values:
                             print(f"  {group}")
+                    elif attr == 'objectClass':
+                        print(f"{attr}:")
+                        for objectclass in values:
+                            print(f"  {objectclass}")
                     else:
                         print(f"{attr}: {', '.join(values)}")
         else:
