@@ -2,6 +2,7 @@ import click
 import json
 import ldap3
 
+from ldap3.core.exceptions import LDAPException
 from pyadm.config import config
 
 
@@ -23,6 +24,7 @@ def ldap_search(click_options, search_filter, attributes=[]):
         server = ldap3.Server(server_url)
         conn = ldap3.Connection(server, user=bind_dn, password=bind_password)
         conn.open()
+        conn.bind()
     
         base_dn = click_options["base_dn"]
     
@@ -32,7 +34,7 @@ def ldap_search(click_options, search_filter, attributes=[]):
     
         result_entries = conn.entries
         return result_entries
-    except ldap3.LDAPException as e:
+    except LDAPException as e:
         raise click.ClickException(f"LDAP search failed: {e}")
 
 def sort_memberof(memberof):
@@ -57,21 +59,13 @@ def ldapcli(server, base_dn, username, password):
         click_options["username"] = username or defaults["username"]
         click_options["password"] = password
 
-@ldapcli.command("test", help="Show information about [USER]")
-@click.argument('username')
-def test(username):
-    search_filter = f"(uid={username})"
-    attributes = ['cn', 'mail', 'memberOf']
-    result = ldap_search(click_options, search_filter, attributes)
-    print (result)
- 
 # show information about a user  
 @ldapcli.command("user", help="Show information about [USER]")
 @click.argument('username')
 @click.option('--all', '-a', is_flag=True, default=None, help="Show all attributes")
 @click.option('--json', '-j', 'json_output', is_flag=True, default=None, help="Output as JSON")
 def user(username, json_output, all):
-    search_filter = f"(uid={username})"
+    search_filter = f"(|(uid={username})(cn={username}))"
     try:
         if all:
             attributes = ['*']
@@ -81,13 +75,11 @@ def user(username, json_output, all):
             result = ldap_search(click_options, search_filter, attributes)
 
         if result:
-
             if json_output:
                 user_info = result[0].entry_to_json()
                 print(user_info)
             else:
                 user_info = result[0].entry_attributes_as_dict
-
                 user_info = {str(attr): [str(value) for value in values] for attr, values in user_info.items()}
                 for attr, values in sorted(user_info.items()):
                     if attr == 'memberOf' or attr == 'objectClass':
@@ -105,10 +97,10 @@ def user(username, json_output, all):
 
 # show groups a user belongs to
 @ldapcli.command("groups", help="Show groups for [USER]")
-@click.argument('uid')
+@click.argument('username')
 @click.option('--json', '-j', 'json_output', is_flag=True, default=None, help="Output as JSON")
-def groups(uid, json_output):
-    search_filter = f"(uid={uid})"
+def groups(username, json_output):
+    search_filter = f"(|(uid={username})(cn={username}))"
     try:
         attributes = ['memberOf']
         result = ldap_search(click_options, search_filter, attributes)
@@ -120,7 +112,6 @@ def groups(uid, json_output):
                 print(group_info)
             else:
                 group_info = result[0].entry_attributes_as_dict
-                # group_info = {attr: [str(value) for value in values] if attr != 'memberOf' else sort_memberof(values) for attr, values in group_info.items()}
                 group_info = {str(attr): [str(value) for value in values] for attr, values in group_info.items()}
                 for attr, values in sorted(group_info.items()):
                     if attr == 'memberOf' or attr == 'objectClass':
@@ -152,13 +143,11 @@ def members(group_cn, json_output, all):
             result = ldap_search(click_options, search_filter, attributes)
 
         if result:
-  
             if json_output:
                 group_info = result[0].entry_to_json()
                 print(group_info)
             else:
                 group_info = result[0].entry_attributes_as_dict
-                # group_info = {attr: [str(value) for value in values] if attr != 'member' else sort_memberof(values) for attr, values in group_info.items()}
                 group_info = {str(attr): [str(value) for value in values] for attr, values in group_info.items()}
                 for attr, values in sorted(group_info.items()):
                     if attr == 'member' or attr == 'objectClass':
@@ -166,12 +155,9 @@ def members(group_cn, json_output, all):
                         for group in values:
                             print(f"  - {group}")
                     else:
-                        print(f"{attr}: {', '.join(values)}")
-
-                    
-                        
+                        print(f"{attr}: {', '.join(values)}")           
         else:
-            raise click.ClickException(f"No user found with UID '{username}'.")
+            raise click.ClickException(f"No user found with UID '{group_cn}'.")
     except click.ClickException as e:
         raise e
     except Exception as e:
