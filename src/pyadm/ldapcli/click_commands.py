@@ -1,6 +1,5 @@
 import click
 import json
-import ldap
 import ldap3
 
 from pyadm.config import config
@@ -14,18 +13,6 @@ defaults = {
 }
 
 click_options = {}
-
-# ldap wrapper function(s)
-# def ldap_search(click_options, search_filter, attributes=[]):
-#     try: 
-#         ldap_connection = ldap.initialize(click_options["server"])
-#         ldap_connection.simple_bind(click_options["username"], click_options["password"])
-#         base_dn = click_options["base_dn"]
-        
-#         result = ldap_connection.search_s(base_dn, ldap.SCOPE_SUBTREE, search_filter, attributes)
-#         return result
-#     except ldap.LDAPError as e:
-#         raise click.ClickException(f"LDAP search failed: {e}")
 
 def ldap_search(click_options, search_filter, attributes=[]):
     try:
