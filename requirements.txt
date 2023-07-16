@@ -1,3 +1,4 @@
 # Enter requirements
 click
 python-ldap
+ldap3
