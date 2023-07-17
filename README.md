@@ -10,7 +10,7 @@ It provides modular functionality to perform various tasks efficiently.
 To install `pyadm`, use the following command (soon!):
 
 ```shell
-pip install pyadm
+pip install pyadm-toolkit
 ```
 ## Usage
 The general command structure for pyadm is as follows:

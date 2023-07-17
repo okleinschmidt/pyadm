@@ -1,3 +1,7 @@
 [build-system]
 requires = ["setuptools", "black"]
 build-backend = "setuptools.build_meta"
+
+[project.urls]
+"Homepage" = "https://github.com/okleinschmidt/pyadm"
+"Bug Tracker" = "https://github.com/okleinschmidt/pyadm/issues"
