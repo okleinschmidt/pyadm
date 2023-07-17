@@ -19,14 +19,21 @@ def cli():
     
     \b
     Example:
-    $ pyadm ldap user jdoe          # Retrieve information for a user in the LDAP directory
-    $ pyadm ldap groups jdoe        # Show groups associated with a user in the LDAP directory
+    $ pyadm ldap user jdoe             # Retrieve information for a user in the LDAP directory
+    $ pyadm ldap groups jdoe           # Show groups associated with a user in the LDAP directory
     $ pyadm ldap members "Developers"  # Show members of a group in the LDAP directory
     """
     pass
 
+@click.command()
+def version():
+    """Display version information"""
+    with open("VERSION", "r") as version_file:
+        version = version_file.read().strip()
+    click.echo(f"Version: {version}")
 
 cli.add_command(ldapcli)
+cli.add_command(version)
 
 if __name__ == "__main__":
     cli()
