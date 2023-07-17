@@ -7,7 +7,7 @@ It provides modular functionality to perform various tasks efficiently.
 
 ## Installation
 
-To install `pyadm`, use the following command:
+To install `pyadm`, use the following command (soon!):
 
 ```shell
 pip install pyadm
