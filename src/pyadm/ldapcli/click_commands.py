@@ -57,7 +57,7 @@ def ldapcli(server, base_dn, username, password):
     The configuration file allows you to customize various settings for the
     command, such as the LDAP server, base DN, username, password, and other options.
 
-    The default location for the configuration file is `/home/user/.pyadm.conf`.
+    The default location for the configuration file is `/home/user/.config/pyadm/pyadm.conf`.
 
     Example configuration file contents:
     

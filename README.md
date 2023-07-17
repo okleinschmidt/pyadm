@@ -43,7 +43,7 @@ pyadm ldap members --hel
 ```
 
 ## Configuration
-The pyadm tool allows you to customize its behavior through a configuration file. By default, the configuration file is located at `~/.pyadm.conf`.
+The pyadm tool allows you to customize its behavior through a configuration file. By default, the configuration file is located at `~/.config/pyadm/pyadm.conf`.
 
 To use a custom configuration file, create a file in the following format:
 ```ini
