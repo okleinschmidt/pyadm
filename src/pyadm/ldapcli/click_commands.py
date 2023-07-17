@@ -51,6 +51,23 @@ def ldapcli(server, base_dn, username, password):
     \b
     To see the available subcommands, run 'pyadm ldap --help'.\r
     Get help for subcommands, run 'pyadm ldap COMMAND --help'.
+    
+    \b
+    Configuration File:\r
+    The configuration file allows you to customize various settings for the
+    command, such as the LDAP server, base DN, username, password, and other options.
+
+    The default location for the configuration file is `/home/user/.pyadm.conf`.
+
+    Example configuration file contents:
+    
+    \b
+    [LDAP]
+    server = ldaps://dc.example.org
+    base_dn = dc=example,dc=org
+    bind_username = administrator@example.org
+    bind_password = s3cr3t-p455w0rd!
+    
     """
     if not (server or base_dn or username or password):
         click_options["server"] = config["LDAP"]["server"] or defaults["server"]

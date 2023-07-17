@@ -1,19 +1,61 @@
-# copier-python-template
+# pyadm - Swiss Army Knife for Engineers and Administrators
 
-[Copier](https://copier.readthedocs.io/en/stable/) template for SIH python projects.
+**pyadm** is a versatile command-line tool designed as a Swiss Army Knife for engineers and administrators.\
+It provides modular functionality to perform various tasks efficiently. Currently, the only available module is `ldap`, which enables LDAP-related operations.
 
-## First usage
+## Installation
 
-1. [Install Copier](https://copier.readthedocs.io/en/stable/#installation).
-2. Enter your project folder: `cd my-project`.
-3. Make it a git repo: `git init`.
-4. Run `copier copy git+https://gitlab.com/datenreisende/python/python-template .`
-5. Answer questions.
-6. Commit: `git commit -am 'Apply copier template'`.
+To install `pyadm`, use the following command:
 
-## Get updates
+```shell
+pip install pyadm
+```
+## Usage
+The general command structure for pyadm is as follows:
+```shell
+pyadm MODULE SUBCOMMAND [OPTIONS]
+```
+To use the LDAP module, execute the pyadm ldap command followed by the desired subcommand to perform specific LDAP operations.
 
-1. Enter your project folder: `cd my-project`.
-2. Update: `copier update`.
-3. Answer questions, if anything changed.
-4. Commit: `git commit -am 'Update copier template'`.
+## LDAP Module
+The LDAP module within pyadm allows you to interact with LDAP servers and perform common operations, such as retrieving user information, showing group associations, and displaying group members.
+
+### Examples
+* Retrieve information for a user in the LDAP directory:
+  ```shell
+  pyadm ldap user USERNAME
+  ```
+* Show groups associated with a user in the LDAP directory:
+  ```shell
+  pyadm ldap groups USERNAME
+  ```
+* Show members of a group in the LDAP directory:
+  ```shell
+  pyadm ldap members GROUP_CN
+  ```
+For more information on each subcommand, you can use the --help option, as shown in the examples below:
+```shell
+pyadm ldap user --help
+pyadm ldap groups --help
+pyadm ldap members --hel
+```
+
+## Configuration
+The pyadm tool allows you to customize its behavior through a configuration file. By default, the configuration file is located at `~/.pyadm.conf`. You can specify a different configuration file using the `--config` option when running the command.
+
+To use a custom configuration file, create a file in the following format:
+```ini
+[LDAP]
+server = ldaps://dc.example.org
+base_dn = dc=example,dc=org
+bind_username = administrator@example.org
+bind_password = s3cr3t-p455w0rd!
+```
+Specify the desired values for the LDAP server, base DN, bind username, and bind password in the configuration file.
+
+## Contributing
+Contributions are welcome! If you encounter any issues, have suggestions, or would like to add new features, please submit an issue or a pull request.
+
+## License
+This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).\
+Feel free to copy and use this markdown source as needed for your `README.md` file.
