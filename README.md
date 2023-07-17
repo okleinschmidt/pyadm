@@ -1,7 +1,9 @@
 # pyadm - Swiss Army Knife for Engineers and Administrators
 
 **pyadm** is a versatile command-line tool designed as a Swiss Army Knife for engineers and administrators.\
-It provides modular functionality to perform various tasks efficiently. Currently, the only available module is `ldap`, which enables LDAP-related operations.
+It provides modular functionality to perform various tasks efficiently. 
+
+**Currently, the only available module is `ldap`, which enables LDAP-related operations.**
 
 ## Installation
 
