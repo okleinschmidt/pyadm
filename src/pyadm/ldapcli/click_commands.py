@@ -5,7 +5,6 @@ import ldap3
 from ldap3.core.exceptions import LDAPException
 from pyadm.config import config
 
-
 defaults = {
     "server": "ldap://localhost",
     "base_dn": "dc=example,dc=org",
@@ -14,7 +13,6 @@ defaults = {
 }
 
 click_options = {}
-
 
 def ldap_search(click_options, search_filter, attributes=[]):
     try:
@@ -35,12 +33,6 @@ def ldap_search(click_options, search_filter, attributes=[]):
         return result_entries
     except LDAPException as e:
         raise click.ClickException(f"LDAP search failed: {e}")
-
-
-def sort_memberof(memberof):
-    groups = [str(group) for group in memberof]
-    return sorted(groups)
-
 
 # define click commands
 @click.group("ldap")
@@ -70,7 +62,6 @@ def ldapcli(server, base_dn, username, password):
         click_options["base_dn"] = base_dn or defaults["base_dn"]
         click_options["username"] = username or defaults["username"]
         click_options["password"] = password
-
 
 # show information about a user
 @ldapcli.command("user")
@@ -120,7 +111,6 @@ def user(username, json_output, all):
     except Exception as e:
         raise click.ClickException(f"An error occurred: {e}")
 
-
 # show groups a user belongs to
 @ldapcli.command("groups")
 @click.argument("username", metavar="[UID, CN, MAIL]")
@@ -164,7 +154,6 @@ def groups(username, json_output):
         raise e
     except Exception as e:
         raise click.ClickException(f"An error occurred: {e}")
-
 
 # show members of a group
 @ldapcli.command("members")
