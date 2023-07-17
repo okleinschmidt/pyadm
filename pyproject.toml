@@ -2,6 +2,21 @@
 requires = ["setuptools", "black"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "pyadm-toolkit"
+version = "0.0.1"
+authors = [
+  { name="Ole Kleinschmidt", email="ok@datenreisende.org" },
+]
+description = "PyADM - Python Admin Toolkit. The swiss army knife for every engineer."
+readme = "README.md"
+requires-python = ">=3.10.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
 [project.urls]
 "Homepage" = "https://github.com/okleinschmidt/pyadm"
 "Bug Tracker" = "https://github.com/okleinschmidt/pyadm/issues"
