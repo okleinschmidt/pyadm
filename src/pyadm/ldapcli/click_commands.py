@@ -36,10 +36,10 @@ def ldap_search(click_options, search_filter, attributes=[]):
 
 # define click commands
 @click.group("ldap")
-@click.option("--server", "-s", help="LDAP Server")
-@click.option("--base_dn", "-b", help="base_dn")
-@click.option("--username", "-u", help="Username")
-@click.option("--password", "-p", help="Password  [will prompt if password is empty]", prompt=False, hide_input=True)
+@click.option("--server", "-s", help="Specify the LDAP server.")
+@click.option("--base_dn", "-b", help="Specify the base DN (Distinguished Name).")
+@click.option("--username", "-u", help="Specify the username for authentication.")
+@click.option("--password", "-p", help="Specify the password for authentication. It will prompt if the password is empty.", prompt=False, hide_input=True)
 def ldapcli(server, base_dn, username, password):
     """
     Query LDAP/Active Directory.
@@ -47,10 +47,10 @@ def ldapcli(server, base_dn, username, password):
     This command provides various subcommands to interact with
     an LDAP or Active Directory server. It allows you to perform queries,
     retrieve information, and manage users and groups within the directory.
-
-    To see the available subcommands, run 'pyadm ldap --help'.
     
-    To get help with subcommands, run 'pyadm ldap COMMAND --help'
+    \b
+    To see the available subcommands, run 'pyadm ldap --help'.\r
+    Get help for subcommands, run 'pyadm ldap COMMAND --help'.
     """
     if not (server or base_dn or username or password):
         click_options["server"] = config["LDAP"]["server"] or defaults["server"]
