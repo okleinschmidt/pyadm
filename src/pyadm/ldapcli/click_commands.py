@@ -39,7 +39,13 @@ def ldap_search(click_options, search_filter, attributes=[]):
 @click.option("--server", "-s", help="Specify the LDAP server.")
 @click.option("--base_dn", "-b", help="Specify the base DN (Distinguished Name).")
 @click.option("--username", "-u", help="Specify the username for authentication.")
-@click.option("--password", "-p", help="Specify the password for authentication. It will prompt if the password is empty.", prompt=False, hide_input=True)
+@click.option(
+    "--password",
+    "-p",
+    help="Specify the password for authentication. It will prompt if the password is empty.",
+    prompt=True,
+    hide_input=True,
+)
 def ldapcli(server, base_dn, username, password):
     """
     Query LDAP/Active Directory.
