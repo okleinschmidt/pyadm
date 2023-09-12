@@ -34,17 +34,20 @@ def ldap_search(click_options, search_filter, attributes=[]):
     except LDAPException as e:
         raise click.ClickException(f"LDAP search failed: {e}")
 
+
 # define click commands
 @click.group("ldap")
-@click.option("--server", "-s", help="Specify the LDAP server.")
-@click.option("--base_dn", "-b", help="Specify the base DN (Distinguished Name).")
-@click.option("--username", "-u", help="Specify the username for authentication.")
+@click.option("--server", "-s", help="Specify the LDAP server.", defaults=defaults["server"])
+@click.option("--base_dn", "-b", help="Specify the base DN (Distinguished Name).", defaults=defaults["base_dn"])
+@click.option("--username", "-u", help="Specify the username for authentication.", defaults=defaults["username"])
 @click.option(
     "--password",
     "-p",
     help="Specify the password for authentication. It will prompt if the password is empty.",
     prompt=True,
     hide_input=True,
+    default=defaults["password"],
+    password=True,
 )
 def ldapcli(server, base_dn, username, password):
     """
@@ -53,11 +56,11 @@ def ldapcli(server, base_dn, username, password):
     This command provides various subcommands to interact with
     an LDAP or Active Directory server. It allows you to perform queries,
     retrieve information, and manage users and groups within the directory.
-    
+
     \b
     To see the available subcommands, run 'pyadm ldap --help'.\r
     Get help for subcommands, run 'pyadm ldap COMMAND --help'.
-    
+
     \b
     Configuration File:\r
     The configuration file allows you to customize various settings for the
@@ -66,25 +69,20 @@ def ldapcli(server, base_dn, username, password):
     The default location for the configuration file is `/home/user/.config/pyadm/pyadm.conf`.
 
     Example configuration file contents:
-    
+
     \b
     [LDAP]
     server = ldaps://dc.example.org
     base_dn = dc=example,dc=org
     bind_username = administrator@example.org
     bind_password = s3cr3t-p455w0rd!
-    
+
     """
-    if not (server or base_dn or username or password):
-        click_options["server"] = config["LDAP"]["server"] or defaults["server"]
-        click_options["base_dn"] = config["LDAP"]["base_dn"] or defaults["base_dn"]
-        click_options["username"] = config["LDAP"]["bind_username"] or defaults["username"]
-        click_options["password"] = config["LDAP"]["bind_password"] or defaults["password"]
-    else:
-        click_options["server"] = server or defaults["server"]
-        click_options["base_dn"] = base_dn or defaults["base_dn"]
-        click_options["username"] = username or defaults["username"]
-        click_options["password"] = password
+    click_options["server"] = server or config["LDAP"]["server"]
+    click_options["base_dn"] = base_dn or config["LDAP"]["base_dn"]
+    click_options["username"] = username or config["LDAP"]["bind_username"]
+    click_options["password"] = password or config["LDAP"]["bind_password"]
+
 
 # show information about a user
 @ldapcli.command("user")
