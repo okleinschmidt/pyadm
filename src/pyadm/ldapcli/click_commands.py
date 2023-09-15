@@ -14,6 +14,11 @@ defaults = {
 
 click_options = {}
 
+def prompt_password_if_needed(ctx, param, value):
+    if value:  # `-p` was provided without an argument
+        return click.prompt("Specify the password for authentication", hide_input=True)
+    return None  # Default value, if `-p` was not provided at all.
+
 def ldap_search(click_options, search_filter, attributes=[]):
     try:
         server_url = click_options["server"]
@@ -39,7 +44,13 @@ def ldap_search(click_options, search_filter, attributes=[]):
 @click.option("--server", "-s", help="Specify the LDAP server.")
 @click.option("--base_dn", "-b", help="Specify the base DN (Distinguished Name).")
 @click.option("--username", "-u", help="Specify the username for authentication.")
-@click.option("--password", "-p", help="Specify the password for authentication. It will prompt if the password is empty.", prompt=False, hide_input=True)
+@click.option("--password", "-p", help="Specify the password for authentication.",
+              prompt=False,  # Do not use built-in prompting.
+              callback=prompt_password_if_needed, 
+              is_flag=True, 
+              flag_value=True, 
+              expose_value=True,
+              default=None)
 def ldapcli(server, base_dn, username, password):
     """
     Query LDAP/Active Directory.
@@ -78,7 +89,7 @@ def ldapcli(server, base_dn, username, password):
         click_options["server"] = server or defaults["server"]
         click_options["base_dn"] = base_dn or defaults["base_dn"]
         click_options["username"] = username or defaults["username"]
-        click_options["password"] = password
+        click_options["password"] = password or defaults["password"]
 
 # show information about a user
 @ldapcli.command("user")
