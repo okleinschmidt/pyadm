@@ -46,7 +46,7 @@ def elastic(server, base_dn, username, password):
 @elastic.command("list")
 def list():
     """
-    List indicies
+    List indices
     """
 
 
