@@ -1,3 +1,4 @@
 # Enter requirements
 click
 ldap3
+elasticsearch

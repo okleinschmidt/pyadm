@@ -1,7 +1,7 @@
 import click
 
 from pyadm.ldapcli.click_commands import ldapcli
-
+from pyadm.elastic.click_commands import elastic
 
 @click.group()
 def cli():
@@ -33,6 +33,7 @@ def version():
     click.echo(f"Version: {version}")
 
 cli.add_command(ldapcli)
+cli.add_command(elastic)
 cli.add_command(version)
 
 if __name__ == "__main__":
