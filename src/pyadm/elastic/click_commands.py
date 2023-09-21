@@ -1,14 +1,13 @@
 import click
 import json
-import elasticsearch
 
+from pyadm.elastic.elastic import ElasticSearch
 from pyadm.config import config
 
 defaults = {
-    "server": "ldap://localhost",
-    "base_dn": "dc=example,dc=org",
-    "username": "root@example.org",
-    "password": "s3cur3_p455w0rd",
+    "url": "http://localhost:9200",
+    "username": "elastic",
+    "password": "changeme",
 }
 
 click_options = {}
@@ -20,7 +19,7 @@ def prompt_password_if_needed(ctx, param, value):
 
 # define click commands
 @click.group("elastic")
-@click.option("--server", "-s", help="Specify the Search server.")
+@click.option("--url", "-url", help="Specify the Search URL.")
 @click.option("--username", "-u", help="Specify the username for authentication.")
 @click.option("--password", "-p", help="Specify the password for authentication.",
               prompt=False,  # Do not use built-in prompting.
@@ -29,16 +28,16 @@ def prompt_password_if_needed(ctx, param, value):
               flag_value=True, 
               expose_value=True,
               default=None)
-def elastic(server, base_dn, username, password):
+def elastic(url, username, password):
     """
     Elastic/OpenSearch.   
     """
-    if not (server or base_dn or username or password):
-        click_options["server"] = config["ELASTIC"]["server"] or defaults["server"]
+    if not (url or username or password):
+        click_options["url"] = config["ELASTIC"]["url"] or defaults["url"]
         click_options["username"] = config["ELASTIC"]["username"] or defaults["username"]
         click_options["password"] = config["ELASTIC"]["password"] or defaults["password"]
     else:
-        click_options["server"] = server or defaults["server"]
+        click_options["url"] = url or defaults["url"]
         click_options["username"] = username or defaults["username"]
         click_options["password"] = password or defaults["password"]
 
@@ -48,5 +47,5 @@ def list():
     """
     List indices
     """
-
+    ElasticSearch(click_options).info()
 
