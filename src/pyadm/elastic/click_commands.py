@@ -1,8 +1,11 @@
 import click
 import json
 
+from tabulate import tabulate
+
 from pyadm.elastic.elastic import ElasticSearch
 from pyadm.config import config
+from pyadm.helper import Helper
 
 defaults = {
     "url": "http://localhost:9200",
@@ -42,10 +45,30 @@ def elastic(url, username, password):
         click_options["password"] = password or defaults["password"]
 
 # show information about a user
-@elastic.command("list")
-def list():
+@elastic.command("info")
+def info():
     """
-    List indices
+    Show cluster info
     """
-    ElasticSearch(click_options).info()
+    data = ElasticSearch(click_options).info()
+    Helper.print_data(data)
 
+@elastic.command("indices")
+@click.option('--limit', '-l', default=None, type=int, help='Limit the number of rows to display')
+@click.option('--output', '-o', type=click.Choice(['table', 'json']), default='table', help='Output format: table or json')
+def indices(limit, output):
+    """ List all indices """
+    data = ElasticSearch(click_options).list_indices()
+    
+    header = data[0].keys()
+    rows =  [x.values() for x in data]
+    # Apply the limit if provided
+    if limit:
+        data = list(reversed(data))[:limit]
+
+    if output == "json":
+        print(json.dumps(data, indent=4))
+    else:
+        header = data[0].keys()
+        rows = [x.values() for x in data]
+        print(tabulate(rows, header, tablefmt="grid"))
