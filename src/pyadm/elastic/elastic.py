@@ -27,4 +27,9 @@ class ElasticSearch():
         all_indices = [index for index in response if not index['index'].startswith('.')]
         sorted_indices = sorted(all_indices, key=lambda x: x['index'])
         return sorted_indices
+    
+    def reindex(self, source, dest):
+        es = self.es
+        print (f"Source: {source} | Dest: {dest}")
+        
         

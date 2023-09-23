@@ -1,5 +1,6 @@
 import click
 import json
+import re
 
 from tabulate import tabulate
 
@@ -72,3 +73,27 @@ def indices(limit, output):
         header = data[0].keys()
         rows = [x.values() for x in data]
         print(tabulate(rows, header, tablefmt="grid"))
+
+@elastic.command("reindex")
+@click.option('--source', '-s', 
+              help=
+              """
+              Specify the source index pattern. You can use "*" as a
+              wildcard to match multiple indices. For example, "rsyslog-2023*" 
+              will match any index starting with "rsyslog-2023".
+              """
+              )
+@click.option('--dest', '-d', help='Destination index')
+def reindex(source, dest):
+    try:
+        indices = ElasticSearch(click_options).list_indices()
+        pattern = source.replace("*", ".*")
+
+        for index in indices:
+            if re.match(pattern, index['index']):
+                print(index['index'])
+    except click.ClickException as e:
+        raise e
+    except Exception as e:
+        raise click.ClickException(f"An error occurred: {e}")
+    # ElasticSearch(click_options).reindex(source, dest)
