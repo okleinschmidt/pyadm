@@ -12,6 +12,7 @@ defaults = {
     "url": "http://localhost:9200",
     "username": "elastic",
     "password": "changeme",
+    "suffix": "reindex"
 }
 
 click_options = {}
@@ -75,25 +76,71 @@ def indices(limit, output):
         print(tabulate(rows, header, tablefmt="grid"))
 
 @elastic.command("reindex")
-@click.option('--source', '-s', 
+@click.option('--index', '-i', 
+              required=True,
               help=
               """
-              Specify the source index pattern. You can use "*" as a
-              wildcard to match multiple indices. For example, "rsyslog-2023*" 
-              will match any index starting with "rsyslog-2023".
+              Set the source index pattern. Use "*" as a wildcard to match multiple indices.
+              e.g., "rsyslog-2023*" matches indices beginning with "rsyslog-2023".
+              By default, a suffix "reindex" is added to the new index name, 
+              resulting in names like "syslog-2023.07.01-reindex".
               """
               )
-@click.option('--dest', '-d', help='Destination index')
-def reindex(source, dest):
+@click.option('--suffix', '-s', default=defaults["suffix"],
+              help='Define the suffix for the destination index. Default is "reindex".')
+@click.option('--force', '-f', is_flag=True, help='Force reindexing without confirmation.')
+def reindex(index, suffix, force):
+    """ Reindex indices """
     try:
+        if suffix:
+            suffix = suffix
+            
         indices = ElasticSearch(click_options).list_indices()
-        pattern = source.replace("*", ".*")
 
-        for index in indices:
-            if re.match(pattern, index['index']):
-                print(index['index'])
+        if not index.endswith('*'):
+            index += '*'
+
+        pattern = '^' + index.replace("*", ".*") + '$'
+
+        for idx in indices:
+            if re.match(pattern, idx['index']):
+                new_index_name = f"{idx['index']}-{suffix}"
+                if not force:
+                    if not click.confirm(f"Do you really want to reindex from {idx['index']} to {new_index_name}?"):
+                        continue  # Skip to next iteration if user says 'no'
+                print(f"Reindexing {idx['index']} to {new_index_name}.")
+                ElasticSearch(click_options).reindex(idx['index'], new_index_name)
+                
     except click.ClickException as e:
         raise e
     except Exception as e:
         raise click.ClickException(f"An error occurred: {e}")
-    # ElasticSearch(click_options).reindex(source, dest)
+
+
+
+@elastic.command("delete")
+@click.option('--index', '-i', help='Index name')
+@click.option('--force', '-f', is_flag=True, help='Force deletion without confirmation.')
+def delete(index, force):
+    """ Delete an index """
+    try:    
+        indices = ElasticSearch(click_options).list_indices()
+        if not index.endswith('*'):
+              index += '*'
+
+        pattern = '^' + index.replace("*", ".*") + '$'  
+        for index in indices:
+            if re.match(pattern, index['index']):
+                if not force:
+                    if not click.confirm(f"Do you really want to delete index {index['index']} with {index['uuid']}?"):
+                        continue  # Skip to next iteration if user says 'no'
+                if ElasticSearch(click_options).delete_index(index):
+                    print(f"Index {index['index']} with {index['uuid']} deleted.")
+                else:
+                    print(f"Index {index['index']} with {index['uuid']} not deleted.")
+                  
+    except click.ClickException as e:
+        raise e
+    except Exception as e:
+        raise click.ClickException(f"An error occurred: {e}")
+

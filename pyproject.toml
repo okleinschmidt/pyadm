@@ -16,6 +16,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+dependencies = ['click', 'ldap3', 'elasticsearch', 'tabulate']
+scripts = 'pyadm = pyadm.main:cli'
 
 [project.urls]
 "Homepage" = "https://github.com/okleinschmidt/pyadm"
