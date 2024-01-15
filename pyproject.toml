@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pyadm-toolkit"
 version = "0.0.1"
 authors = [
-  { name="Ole Kleinschmidt", email="ok@datenreisende.org" },
+  { name = "Ole Kleinschmidt", email = "ok@datenreisende.org" },
 ]
 description = "PyADM - Python Admin Toolkit. The swiss army knife for every engineer."
 readme = "README.md"
@@ -16,9 +16,10 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = ['click', 'ldap3', 'elasticsearch', 'tabulate']
-scripts = 'pyadm = pyadm.main:cli'
+keywords = ["python admin toolkit", "pyadm", "ldap", "activedirectory", "directoryserver"]
+license = { file = 'LICENSE' }
+scripts = { pyadm = 'pyadm.main:cli' }
 
 [project.urls]
-"Homepage" = "https://github.com/okleinschmidt/pyadm"
-"Bug Tracker" = "https://github.com/okleinschmidt/pyadm/issues"
+homepage = "https://github.com/okleinschmidt/pyadm"
+bug_tracker = "https://github.com/okleinschmidt/pyadm/issues"
