@@ -1,6 +1,8 @@
+
 [build-system]
 requires = ["setuptools", "black"]
 build-backend = "setuptools.build_meta"
+
 
 [project]
 name = "pyadm-toolkit"
@@ -19,6 +21,13 @@ classifiers = [
 keywords = ["python admin toolkit", "pyadm", "ldap", "activedirectory", "directoryserver"]
 license = { file = 'LICENSE' }
 scripts = { pyadm = 'pyadm.main:cli' }
+dependencies = [
+    "click",
+    "ldap3",
+    "elasticsearch",
+    "opensearch-py",
+    "tabulate"
+]
 
 [project.urls]
 homepage = "https://github.com/okleinschmidt/pyadm"

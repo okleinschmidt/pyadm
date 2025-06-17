@@ -1,3 +1,5 @@
+# New imports for new commands
+import sys
 import click
 import json
 import re
@@ -5,7 +7,7 @@ import re
 from tabulate import tabulate
 
 from pyadm.elastic.elastic import ElasticSearch
-from pyadm.config import config
+from pyadm.config import cluster_config
 from pyadm.helper import Helper
 
 defaults = {
@@ -15,7 +17,9 @@ defaults = {
     "suffix": "reindex"
 }
 
-click_options = {}
+
+# Holds the selected cluster name
+selected_cluster = {"name": None}
 
 def prompt_password_if_needed(ctx, param, value):
     if value:  # `-p` was provided without an argument
@@ -24,44 +28,138 @@ def prompt_password_if_needed(ctx, param, value):
 
 # define click commands
 @click.group("elastic")
-@click.option("--url", "-url", help="Specify the Search URL.")
-@click.option("--username", "-u", help="Specify the username for authentication.")
-@click.option("--password", "-p", help="Specify the password for authentication.",
-              prompt=False,  # Do not use built-in prompting.
-              callback=prompt_password_if_needed, 
-              is_flag=True, 
-              flag_value=True, 
-              expose_value=True,
-              default=None)
-def elastic(url, username, password):
+@click.option("--cluster", "-c", default=None, help="Select cluster by name (section in config)")
+def elastic(cluster):
     """
-    Elastic/OpenSearch.   
+    Elastic/OpenSearch (multi-cluster support).
     """
-    if not (url or username or password):
-        click_options["url"] = config["ELASTIC"]["url"] or defaults["url"]
-        click_options["username"] = config["ELASTIC"]["username"] or defaults["username"]
-        click_options["password"] = config["ELASTIC"]["password"] or defaults["password"]
-    else:
-        click_options["url"] = url or defaults["url"]
-        click_options["username"] = username or defaults["username"]
-        click_options["password"] = password or defaults["password"]
+    selected_cluster["name"] = cluster
 
+
+def get_es():
+    # Get config for selected cluster
+    cluster_cfg = cluster_config.get_cluster(selected_cluster["name"])
+    return ElasticSearch(cluster_cfg)
+
+# show information about a user
 # show information about a user
 @elastic.command("info")
 def info():
     """
     Show cluster info
     """
-    data = ElasticSearch(click_options).info()
+    data = get_es().info()
     Helper.print_data(data)
+
+
+# Show cluster health
+@elastic.command("health")
+def health():
+    """
+    Show cluster health
+    """
+    data = get_es().cluster_health()
+    Helper.print_data(data)
+
+
+# Create a new index
+@elastic.command("create-index")
+@click.argument('index')
+@click.option('--body', '-b', default=None, help='Index settings/mappings as JSON string')
+def create_index(index, body):
+    """
+    Create a new index
+    """
+    import json
+    body_dict = json.loads(body) if body else None
+    success = get_es().create_index(index, body_dict)
+    if success:
+        print(f"Index '{index}' created.")
+    else:
+        print(f"Failed to create index '{index}'.", file=sys.stderr)
+
+
+# Show mapping of an index
+@elastic.command("mapping")
+@click.argument('index')
+def mapping(index):
+    """
+    Show mapping of an index
+    """
+    data = get_es().get_mapping(index)
+    Helper.print_data(data)
+
+
+# Search documents in an index
+@elastic.command("search")
+@click.argument('index')
+@click.option('--query', '-q', required=True, help='Query as JSON string (Elasticsearch DSL)')
+@click.option('--size', '-s', default=10, help='Number of results to return')
+def search(index, query, size):
+    """
+    Search for documents in an index
+    """
+    import json
+    try:
+        query_dict = json.loads(query)
+    except Exception as e:
+        print(f"Invalid query JSON: {e}", file=sys.stderr)
+        return
+    data = get_es().search(index, query_dict, size)
+    Helper.print_data(data)
+
+
+# Show aliases
+@elastic.command("aliases")
+@click.argument('index', required=False)
+def aliases(index):
+    """
+    Show aliases for an index or all indices
+    """
+    data = get_es().get_aliases(index)
+    Helper.print_data(data)
+
+
+# Show settings
+@elastic.command("settings")
+@click.argument('index', required=False)
+def settings(index):
+    """
+    Show settings for an index or all indices
+    """
+    data = get_es().get_settings(index)
+    Helper.print_data(data)
+
+
+# Update settings
+@elastic.command("update-settings")
+@click.argument('index')
+@click.option('--settings', '-s', required=True, help='Settings as JSON string')
+def update_settings(index, settings):
+    """
+    Update settings for an index
+    """
+    import json
+    try:
+        settings_dict = json.loads(settings)
+    except Exception as e:
+        print(f"Invalid settings JSON: {e}", file=sys.stderr)
+        return
+    success = get_es().update_settings(index, settings_dict)
+    if success:
+        print(f"Settings updated for index '{index}'.")
+    else:
+        print(f"Failed to update settings for index '{index}'.", file=sys.stderr)
 
 @elastic.command("indices")
 @click.option('--limit', '-l', default=None, type=int, help='Limit the number of rows to display')
 @click.option('--output', '-o', type=click.Choice(['table', 'json']), default='table', help='Output format: table or json')
 def indices(limit, output):
     """ List all indices """
-    data = ElasticSearch(click_options).list_indices()
-    
+    data = get_es().list_indices()
+    if not data:
+        print("No indices found.")
+        return
     header = data[0].keys()
     rows =  [x.values() for x in data]
     # Apply the limit if provided
@@ -94,14 +192,10 @@ def reindex(index, suffix, force):
     try:
         if suffix:
             suffix = suffix
-            
-        indices = ElasticSearch(click_options).list_indices()
-
+        indices = get_es().list_indices()
         if not index.endswith('*'):
             index += '*'
-
         pattern = '^' + index.replace("*", ".*") + '$'
-
         for idx in indices:
             if re.match(pattern, idx['index']):
                 new_index_name = f"{idx['index']}-{suffix}"
@@ -109,8 +203,7 @@ def reindex(index, suffix, force):
                     if not click.confirm(f"Do you really want to reindex from {idx['index']} to {new_index_name}?"):
                         continue  # Skip to next iteration if user says 'no'
                 print(f"Reindexing {idx['index']} to {new_index_name}.")
-                ElasticSearch(click_options).reindex(idx['index'], new_index_name)
-                
+                get_es().reindex(idx['index'], new_index_name)
     except click.ClickException as e:
         raise e
     except Exception as e:
@@ -124,21 +217,19 @@ def reindex(index, suffix, force):
 def delete(index, force):
     """ Delete an index """
     try:    
-        indices = ElasticSearch(click_options).list_indices()
+        indices = get_es().list_indices()
         if not index.endswith('*'):
-              index += '*'
-
+            index += '*'
         pattern = '^' + index.replace("*", ".*") + '$'  
-        for index in indices:
-            if re.match(pattern, index['index']):
+        for idx in indices:
+            if re.match(pattern, idx['index']):
                 if not force:
-                    if not click.confirm(f"Do you really want to delete index {index['index']} with {index['uuid']}?"):
+                    if not click.confirm(f"Do you really want to delete index {idx['index']} with {idx['uuid']}?"):
                         continue  # Skip to next iteration if user says 'no'
-                if ElasticSearch(click_options).delete_index(index):
-                    print(f"Index {index['index']} with {index['uuid']} deleted.")
+                if get_es().delete_index(idx['index']):
+                    print(f"Index {idx['index']} with {idx['uuid']} deleted.")
                 else:
-                    print(f"Index {index['index']} with {index['uuid']} not deleted.")
-                  
+                    print(f"Index {idx['index']} with {idx['uuid']} not deleted.")
     except click.ClickException as e:
         raise e
     except Exception as e:
