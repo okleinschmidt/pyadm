@@ -2,6 +2,9 @@ import click
 
 from pyadm.ldapcli.click_commands import ldapcli
 from pyadm.elastic.click_commands import elastic
+from pyadm.pvecli import pvecli
+from pyadm.config_commands import config_cli
+
 
 @click.group()
 def cli():
@@ -30,9 +33,15 @@ def version():
         version = version_file.read().strip()
     click.echo(f"Version: {version}")
 
+
+# Register the config command group
+cli.add_command(config_cli)
 cli.add_command(ldapcli)
 cli.add_command(elastic)
 cli.add_command(version)
+cli.add_command(pvecli)
+
+
 
 if __name__ == "__main__":
     cli()

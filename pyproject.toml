@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyadm-toolkit"
-version = "0.0.1"
+version = "0.1.0"
 authors = [
   { name = "Ole Kleinschmidt", email = "ok@datenreisende.org" },
 ]
@@ -18,7 +18,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-keywords = ["python admin toolkit", "pyadm", "ldap", "activedirectory", "directoryserver"]
+keywords = ["python admin toolkit", "pyadm", "ldap", "activedirectory", "directoryserver", "elasticsearch", "opensearch", "proxmox", "pve"]
 license = { file = 'LICENSE' }
 scripts = { pyadm = 'pyadm.main:cli' }
 dependencies = [
@@ -26,7 +26,8 @@ dependencies = [
     "ldap3",
     "elasticsearch",
     "opensearch-py",
-    "tabulate"
+    "tabulate",
+    "proxmoxer"
 ]
 
 [project.urls]
