@@ -25,11 +25,37 @@ from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
 @click.option("--set-attribute", multiple=True, help="Set group attribute (format: attribute=value)")
 def groups(name, json_output, csv, all, attributes, create, delete, add_member, remove_member, 
           add_members_from_file, remove_members_from_file, set_description, rename_to, move_to, set_attribute):
-    """
-    Manage groups in LDAP/Active Directory.
+    """Comprehensive group management and membership queries.
     
-    Without options: Show groups associated with a user specified by [NAME].
-    With group management options: Treat [NAME] as a group CN instead.
+    NAME: User identifier to show group memberships, or group name for group operations
+    
+    When used with a username, shows all groups the user belongs to.
+    When used with group management options, performs group administration tasks.
+    
+    \b
+    Membership Query Examples:
+        pyadm ldap groups jdoe                    # Show all groups for user jdoe
+        pyadm ldap groups jdoe --json             # JSON output
+        pyadm ldap groups jdoe --csv              # CSV output
+    
+    \b
+    Group Management Examples:
+        pyadm ldap groups "HR Team" --create                    # Create new group
+        pyadm ldap groups "HR Team" --delete                    # Delete group
+        pyadm ldap groups "HR Team" --add-member jdoe           # Add user to group
+        pyadm ldap groups "HR Team" --remove-member jdoe        # Remove user from group
+        pyadm ldap groups "HR Team" --set-description "Human Resources"
+    
+    \b
+    Bulk Operations Examples:
+        pyadm ldap groups "Developers" --add-members-from-file users.txt
+        pyadm ldap groups "Contractors" --remove-members-from-file removed.txt
+    
+    \b
+    Group Administration Examples:
+        pyadm ldap groups "Old Team" --rename-to "New Team"
+        pyadm ldap groups "Marketing" --move-to "OU=Teams,DC=company,DC=com"
+        pyadm ldap groups "Sales" --set-attribute "info=Sales Department"
     """
     try:
         ldap_client = get_ldap_client()
@@ -53,7 +79,7 @@ def groups(name, json_output, csv, all, attributes, create, delete, add_member, 
         group_dn = None
         
         if is_group_management:
-            group_result = ldap_client.get_group_members(name)
+            group_result = ldap_client.get_group(name)
             if not group_result and not create:
                 raise click.ClickException(f"No group found with name '{name}'.")
             if group_result:

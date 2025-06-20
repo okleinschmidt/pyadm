@@ -4,14 +4,12 @@ import sys
 import os
 import logging
 from tabulate import tabulate
-from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve
+from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id
 
 
-@pvecli.group("ct")
+@pvecli.group("ct", context_settings={'help_option_names': ['-h', '--help']})
 def container():
-    """
-    Manage containers (LXC) on Proxmox VE.
-    """
+    """Manage containers (LXC) on Proxmox VE."""
     pass
 
 
@@ -75,43 +73,19 @@ def get_container_status(vmid, node, json_output):
     try:
         client = get_pve_client()
         
-        # Check if vmid is numeric (ID) or name
-        try:
-            vm_id = int(vmid)
-            is_id = True
-        except ValueError:
-            is_id = False
+        # Resolve container ID and node
+        ct_id, node = resolve_resource_id(client, vmid, node, "container")
             
-        if is_id:
-            # If node is not provided, try to find it
-            if not node:
-                for ct in client.get_containers():
-                    if ct['vmid'] == vm_id:
-                        node = ct['node']
-                        break
-                        
-            if not node:
-                raise click.ClickException(f"Could not find node for container ID {vm_id}. Please specify with --node.")
-                
-            # Get status using ID
-            status = client.get_container_status(node, vm_id)
-            
-        else:
-            # Get container by name
-            container = client.find_container_by_name(vmid)
-            if not container:
-                raise click.ClickException(f"Container '{vmid}' not found.")
-                
-            # Get status using found info
-            status = client.get_container_status(container['node'], container['vmid'])
-            
+        # Get status
+        status = client.get_container_status(node, ct_id)
+        
         if json_output:
             click.echo(json.dumps(status, indent=2))
         else:
             # Format and display status
             click.echo(f"Container: {vmid}")
             click.echo(f"Status: {status.get('status', 'unknown')}")
-            click.echo(f"Node: {node or container['node']}")
+            click.echo(f"Node: {node}")
             
             # Display additional details
             if 'cpus' in status:
@@ -129,46 +103,28 @@ def get_container_status(vmid, node, json_output):
 
 
 @container.command("start")
-@click.argument("vmid")
+@click.argument("ctid")
 @click.option("--node", "-n", default=None, help="Node name (not needed if container name is unique)")
-def start_container(vmid, node):
+def start_container(ctid, node):
     """
     Start a container by ID or name.
     """
     try:
         client = get_pve_client()
         
-        # Check if vmid is numeric (ID) or name
-        try:
-            vm_id = int(vmid)
-            is_id = True
-        except ValueError:
-            is_id = False
-            
-        if is_id:
-            # If node is not provided, try to find it
-            if not node:
-                for ct in client.get_containers():
-                    if ct['vmid'] == vm_id:
-                        node = ct['node']
-                        break
-                        
-            if not node:
-                raise click.ClickException(f"Could not find node for container ID {vm_id}. Please specify with --node.")
+        # Resolve container ID and node
+        ct_id, node = resolve_resource_id(client, ctid, node, "container")
                 
-            # Start container using ID
-            result = client.start_container(node, vm_id)
-            
+        # Start container
+        result = client.start_container(node, ct_id)
+        
+        # Handle both string and dictionary results
+        if isinstance(result, dict):
+            task_id = result.get('data', 'Unknown')
         else:
-            # Get container by name
-            container = client.find_container_by_name(vmid)
-            if not container:
-                raise click.ClickException(f"Container '{vmid}' not found.")
-                
-            # Start container using found info
-            result = client.start_container(container['node'], container['vmid'])
+            task_id = result  # Assume result is a string containing task ID
             
-        click.echo(f"Container '{vmid}' start initiated. Task ID: {result.get('data')}")
+        click.echo(f"Container '{ctid}' start initiated. Task ID: {task_id}")
                 
     except Exception as e:
         logging.error(f"Error starting container: {e}")
@@ -185,37 +141,19 @@ def stop_container(vmid, node):
     try:
         client = get_pve_client()
         
-        # Check if vmid is numeric (ID) or name
-        try:
-            vm_id = int(vmid)
-            is_id = True
-        except ValueError:
-            is_id = False
+        # Resolve container ID and node
+        ct_id, node = resolve_resource_id(client, vmid, node, "container")
             
-        if is_id:
-            # If node is not provided, try to find it
-            if not node:
-                for ct in client.get_containers():
-                    if ct['vmid'] == vm_id:
-                        node = ct['node']
-                        break
-                        
-            if not node:
-                raise click.ClickException(f"Could not find node for container ID {vm_id}. Please specify with --node.")
-                
-            # Stop container using ID
-            result = client.stop_container(node, vm_id)
-            
+        # Stop container
+        result = client.stop_container(node, ct_id)
+        
+        # Handle both string and dictionary results
+        if isinstance(result, dict):
+            task_id = result.get('data', 'Unknown')
         else:
-            # Get container by name
-            container = client.find_container_by_name(vmid)
-            if not container:
-                raise click.ClickException(f"Container '{vmid}' not found.")
-                
-            # Stop container using found info
-            result = client.stop_container(container['node'], container['vmid'])
+            task_id = result  # Assume result is a string containing task ID
             
-        click.echo(f"Container '{vmid}' stop initiated. Task ID: {result.get('data')}")
+        click.echo(f"Container '{vmid}' stop initiated. Task ID: {task_id}")
                 
     except Exception as e:
         logging.error(f"Error stopping container: {e}")

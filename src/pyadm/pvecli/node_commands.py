@@ -6,11 +6,9 @@ from tabulate import tabulate
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client
 
 
-@pvecli.group("node")
+@pvecli.group("node", context_settings={'help_option_names': ['-h', '--help']})
 def node():
-    """
-    Manage Proxmox VE nodes.
-    """
+    """Manage Proxmox VE nodes."""
     pass
 
 

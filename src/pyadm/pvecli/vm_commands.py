@@ -1,16 +1,16 @@
-import click
 import json
-import sys
+import click
+import logging
+import json
+import click
 import logging
 from tabulate import tabulate
-from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve
+from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id
 
 
-@pvecli.group("vm")
+@pvecli.group("vm", context_settings={'help_option_names': ['-h', '--help']})
 def vm():
-    """
-    Manage virtual machines on Proxmox VE.
-    """
+    """Manage virtual machines on Proxmox VE."""
     pass
 
 
@@ -42,10 +42,9 @@ def list_vms(node, status, json_output, output, include_templates):
         if include_templates:
             vms = client.get_vms(node)
         else:
-            vms = client.get_regular_vms()
-            if node:
-                # Filter by node if specified
-                vms = [vm for vm in vms if vm.get('node') == node]
+            vms = client.get_vms(node)
+            # Filter out templates (VMs with template=1)
+            vms = [vm for vm in vms if not vm.get('template', 0)]
         
         # Filter by status if requested
         if status:
@@ -94,35 +93,11 @@ def get_vm_status(vmid, node, json_output):
     try:
         client = get_pve_client()
         
-        # Check if vmid is numeric (ID) or name
-        try:
-            vm_id = int(vmid)
-            is_id = True
-        except ValueError:
-            is_id = False
+        # Resolve VM ID and node
+        vm_id, node = resolve_resource_id(client, vmid, node, "vm")
             
-        if is_id:
-            # If node is not provided, try to find it
-            if not node:
-                for vm in client.get_vms():
-                    if vm['vmid'] == vm_id:
-                        node = vm['node']
-                        break
-                        
-            if not node:
-                raise click.ClickException(f"Could not find node for VM ID {vm_id}. Please specify with --node.")
-                
-            # Get status using ID
-            status = client.get_vm_status(node, vm_id)
-            
-        else:
-            # Get VM by name
-            vm = client.find_vm_by_name(vmid)
-            if not vm:
-                raise click.ClickException(f"VM '{vmid}' not found.")
-                
-            # Get status using found info
-            status = client.get_vm_status(vm['node'], vm['vmid'])
+        # Get status
+        status = client.get_vm_status(node, vm_id)
             
         if json_output:
             click.echo(json.dumps(status, indent=2))
@@ -130,7 +105,7 @@ def get_vm_status(vmid, node, json_output):
             # Format and display status
             click.echo(f"VM: {vmid}")
             click.echo(f"Status: {status.get('status', 'unknown')}")
-            click.echo(f"Node: {node or vm['node']}")
+            click.echo(f"Node: {node}")
             
             # Display additional details
             if 'cpus' in status:
@@ -139,8 +114,13 @@ def get_vm_status(vmid, node, json_output):
                 mem_gb = status['maxmem'] / (1024**3)
                 click.echo(f"Memory: {mem_gb:.2f} GB")
             if 'uptime' in status and status['uptime']:
-                uptime_hours = status['uptime'] / 3600
-                click.echo(f"Uptime: {uptime_hours:.2f} hours")
+                # Format uptime
+                uptime_seconds = status['uptime']
+                days = uptime_seconds // 86400
+                hours = (uptime_seconds % 86400) // 3600
+                minutes = (uptime_seconds % 3600) // 60
+                uptime_str = f"{days}d {hours}h {minutes}m" if days else f"{hours}h {minutes}m"
+                click.echo(f"Uptime: {uptime_str}")
                 
     except Exception as e:
         logging.error(f"Error getting VM status: {e}")
@@ -157,37 +137,19 @@ def start_vm(vmid, node):
     try:
         client = get_pve_client()
         
-        # Check if vmid is numeric (ID) or name
-        try:
-            vm_id = int(vmid)
-            is_id = True
-        except ValueError:
-            is_id = False
-            
-        if is_id:
-            # If node is not provided, try to find it
-            if not node:
-                for vm in client.get_vms():
-                    if vm['vmid'] == vm_id:
-                        node = vm['node']
-                        break
-                        
-            if not node:
-                raise click.ClickException(f"Could not find node for VM ID {vm_id}. Please specify with --node.")
+        # Resolve VM ID and node
+        vm_id, node = resolve_resource_id(client, vmid, node, "vm")
                 
-            # Start VM using ID
-            result = client.start_vm(node, vm_id)
-            
+        # Start VM
+        result = client.start_vm(node, vm_id)
+        
+        # Handle both string and dictionary results
+        if isinstance(result, dict):
+            task_id = result.get('data', 'Unknown')
         else:
-            # Get VM by name
-            vm = client.find_vm_by_name(vmid)
-            if not vm:
-                raise click.ClickException(f"VM '{vmid}' not found.")
-                
-            # Start VM using found info
-            result = client.start_vm(vm['node'], vm['vmid'])
+            task_id = result  # Assume result is a string containing task ID
             
-        click.echo(f"VM '{vmid}' start initiated. Task ID: {result.get('data')}")
+        click.echo(f"VM '{vmid}' start initiated. Task ID: {task_id}")
                 
     except Exception as e:
         logging.error(f"Error starting VM: {e}")
@@ -204,37 +166,19 @@ def stop_vm(vmid, node):
     try:
         client = get_pve_client()
         
-        # Check if vmid is numeric (ID) or name
-        try:
-            vm_id = int(vmid)
-            is_id = True
-        except ValueError:
-            is_id = False
+        # Resolve VM ID and node
+        vm_id, node = resolve_resource_id(client, vmid, node, "vm")
             
-        if is_id:
-            # If node is not provided, try to find it
-            if not node:
-                for vm in client.get_vms():
-                    if vm['vmid'] == vm_id:
-                        node = vm['node']
-                        break
-                        
-            if not node:
-                raise click.ClickException(f"Could not find node for VM ID {vm_id}. Please specify with --node.")
-                
-            # Stop VM using ID
-            result = client.stop_vm(node, vm_id)
-            
+        # Stop VM
+        result = client.stop_vm(node, vm_id)
+        
+        # Handle both string and dictionary results
+        if isinstance(result, dict):
+            task_id = result.get('data', 'Unknown')
         else:
-            # Get VM by name
-            vm = client.find_vm_by_name(vmid)
-            if not vm:
-                raise click.ClickException(f"VM '{vmid}' not found.")
-                
-            # Stop VM using found info
-            result = client.stop_vm(vm['node'], vm['vmid'])
+            task_id = result  # Assume result is a string containing task ID
             
-        click.echo(f"VM '{vmid}' stop initiated. Task ID: {result.get('data')}")
+        click.echo(f"VM '{vmid}' stop initiated. Task ID: {task_id}")
                 
     except Exception as e:
         logging.error(f"Error stopping VM: {e}")
@@ -251,37 +195,19 @@ def shutdown_vm(vmid, node):
     try:
         client = get_pve_client()
         
-        # Check if vmid is numeric (ID) or name
-        try:
-            vm_id = int(vmid)
-            is_id = True
-        except ValueError:
-            is_id = False
+        # Resolve VM ID and node
+        vm_id, node = resolve_resource_id(client, vmid, node, "vm")
             
-        if is_id:
-            # If node is not provided, try to find it
-            if not node:
-                for vm in client.get_vms():
-                    if vm['vmid'] == vm_id:
-                        node = vm['node']
-                        break
-                        
-            if not node:
-                raise click.ClickException(f"Could not find node for VM ID {vm_id}. Please specify with --node.")
-                
-            # Shutdown VM using ID
-            result = client.shutdown_vm(node, vm_id)
-            
+        # Shutdown VM
+        result = client.shutdown_vm(node, vm_id)
+        
+        # Handle both string and dictionary results
+        if isinstance(result, dict):
+            task_id = result.get('data', 'Unknown')
         else:
-            # Get VM by name
-            vm = client.find_vm_by_name(vmid)
-            if not vm:
-                raise click.ClickException(f"VM '{vmid}' not found.")
-                
-            # Shutdown VM using found info
-            result = client.shutdown_vm(vm['node'], vm['vmid'])
+            task_id = result  # Assume result is a string containing task ID
             
-        click.echo(f"VM '{vmid}' graceful shutdown initiated. Task ID: {result.get('data')}")
+        click.echo(f"VM '{vmid}' graceful shutdown initiated. Task ID: {task_id}")
                 
     except Exception as e:
         logging.error(f"Error shutting down VM: {e}")
@@ -450,45 +376,8 @@ def clone_vm_command(source_vmid, name, node, target_node, storage, full, vmid, 
     try:
         client = get_pve_client()
         
-        # Check if source_vmid is numeric (ID) or name
-        try:
-            source_id = int(source_vmid)
-            is_id = True
-        except ValueError:
-            is_id = False
-            
-        if is_id:
-            # If node is not provided, try to find it
-            if not node:
-                all_vms = client.get_vms()  # Get all VMs including templates
-                for vm in all_vms:
-                    if vm['vmid'] == source_id:
-                        node = vm['node']
-                        break
-                        
-            if not node:
-                raise click.ClickException(f"Could not find node for VM ID {source_id}. Please specify with --node.")
-                
-        else:
-            # Get VM by name
-            all_vms = client.get_vms()  # Get all VMs including templates
-            matching_vms = [vm for vm in all_vms if vm.get('name') == source_vmid]
-            
-            if not matching_vms:
-                raise click.ClickException(f"VM or template '{source_vmid}' not found.")
-            
-            if len(matching_vms) > 1 and not node:
-                raise click.ClickException(f"Multiple VMs found with name '{source_vmid}'. Please specify node with --node.")
-            
-            if node:
-                vm_info = next((vm for vm in matching_vms if vm['node'] == node), None)
-                if not vm_info:
-                    raise click.ClickException(f"No VM named '{source_vmid}' found on node '{node}'.")
-            else:
-                vm_info = matching_vms[0]
-                
-            source_id = vm_info['vmid']
-            node = vm_info['node']
+        # Resolve source VM ID and node
+        source_id, source_node = resolve_resource_id(client, source_vmid, node, "vm")
         
         # Get next VMID if not specified
         if not vmid:
@@ -497,7 +386,7 @@ def clone_vm_command(source_vmid, name, node, target_node, storage, full, vmid, 
         
         # Set target node to source node if not specified
         if not target_node:
-            target_node = node
+            target_node = source_node
             
         # Prepare clone parameters
         params = {
@@ -506,19 +395,16 @@ def clone_vm_command(source_vmid, name, node, target_node, storage, full, vmid, 
             'full': 1 if full else 0,
         }
         
-        if target_node and target_node != node:
+        if target_node and target_node != source_node:
             params['target'] = target_node
             
         if storage:
             params['storage'] = storage
             
         # Confirm cloning
-        if is_id:
-            confirm_msg = f"Clone VM ID {source_id} to new VM '{name}' (ID: {vmid})"
-        else:
-            confirm_msg = f"Clone VM '{source_vmid}' to new VM '{name}' (ID: {vmid})"
+        confirm_msg = f"Clone VM '{source_vmid}' (ID: {source_id}) to new VM '{name}' (ID: {vmid})"
             
-        if target_node and target_node != node:
+        if target_node and target_node != source_node:
             confirm_msg += f" on node '{target_node}'"
             
         if full:
@@ -531,16 +417,29 @@ def clone_vm_command(source_vmid, name, node, target_node, storage, full, vmid, 
             return
             
         # Clone VM
-        result = client.clone_vm(node, source_id, params)
+        result = client.clone_vm(source_node, source_id, params)
         
-        click.echo(f"VM clone initiated. Task ID: {result.get('data')}")
+        # Handle both string and dictionary results
+        if isinstance(result, dict):
+            task_id = result.get('data', 'Unknown')
+        else:
+            task_id = result  # Assume result is a string containing task ID
+            
+        click.echo(f"VM clone initiated. Task ID: {task_id}")
         
         # Start VM if requested
         if start:
             click.echo("Waiting for clone to finish before starting...")
             click.echo("Warning: Starting immediately may fail if clone is not complete.")
-            start_result = client.start_vm(target_node or node, vmid)
-            click.echo(f"VM start initiated. Task ID: {start_result.get('data')}")
+            start_result = client.start_vm(target_node or source_node, vmid)
+            
+            # Handle both string and dictionary results for start operation
+            if isinstance(start_result, dict):
+                start_task_id = start_result.get('data', 'Unknown')
+            else:
+                start_task_id = start_result
+                
+            click.echo(f"VM start initiated. Task ID: {start_task_id}")
             
     except Exception as e:
         logging.error(f"Error cloning VM: {e}")

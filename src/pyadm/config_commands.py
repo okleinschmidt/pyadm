@@ -7,10 +7,21 @@ from pathlib import Path
 from pyadm.config import cluster_config
 
 
-@click.group("config")
+@click.group("config", context_settings={'help_option_names': ['-h', '--help']})
 def config_cli():
-    """
-    Manage pyadm configuration.
+    """Manage pyadm configuration files and settings.
+    
+    Provides tools for creating, editing, validating, and managing configuration
+    files for LDAP, Elasticsearch/OpenSearch, and Proxmox VE connections.
+    
+    \b
+    Examples:
+        pyadm config generate                      # Generate sample configuration
+        pyadm config edit                          # Edit configuration in default editor
+        pyadm config validate                      # Validate configuration syntax
+        pyadm config show                          # Display current configuration
+        pyadm config backup                        # Create configuration backup
+        pyadm config test-connections              # Test all configured connections
     """
     pass
 

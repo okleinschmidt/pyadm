@@ -6,11 +6,9 @@ from tabulate import tabulate
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client
 
 
-@pvecli.group("storage")
+@pvecli.group("storage", context_settings={'help_option_names': ['-h', '--help']})
 def storage():
-    """
-    Manage storage on Proxmox VE.
-    """
+    """Manage storage on Proxmox VE."""
     pass
 
 

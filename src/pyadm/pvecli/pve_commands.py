@@ -9,14 +9,13 @@ from pyadm.pvecli.pve import PVEClient
 selected_pve = {"name": None, "debug": False, "dry_run": False, "offline": False}
 
 
-@click.group("pve")
+@click.group("pve", context_settings={'help_option_names': ['-h', '--help']})
 @click.option("--server", "-s", default=None, help="Select Proxmox VE server by name (section in config)")
 @click.option("--debug", "-d", is_flag=True, help="Enable debug output for API calls")
 @click.option("--dry-run", is_flag=True, help="Show what would be done without connecting")
 @click.option("--offline", is_flag=True, help="Work in offline mode with sample data")
 def pvecli(server, debug, dry_run, offline):
-    """
-    Manage Proxmox Virtual Environment clusters.
+    """Manage Proxmox Virtual Environment clusters.
     
     Use --server/-s to select a config section (e.g. [PVE], [PVE_PROD], ...).
     Use --offline to work with sample data when no server is available.
@@ -93,6 +92,69 @@ def get_pve_client() -> Optional[PVEClient]:
             )
             
         raise
+
+def resolve_resource_id(client, resource_id, node=None, resource_type="vm"):
+    """
+    Resolve a resource ID or name to its numeric ID and node.
+    
+    Args:
+        client: The PVE client instance
+        resource_id: Either numeric ID or name string
+        node: Optional node specification
+        resource_type: Either "vm" or "container"
+        
+    Returns:
+        tuple: (numeric_id, node_name)
+    
+    Raises:
+        click.ClickException: If the resource cannot be found
+    """
+    # Check if resource_id is numeric (ID) or name
+    try:
+        numeric_id = int(resource_id)
+        is_id = True
+    except ValueError:
+        is_id = False
+        
+    if is_id:
+        # If node is not provided, try to find it
+        if not node:
+            if resource_type == "vm":
+                resources = client.get_vms()
+            else:
+                resources = client.get_containers()
+                
+            for resource in resources:
+                if resource['vmid'] == numeric_id:
+                    node = resource['node']
+                    break
+                    
+        if not node:
+            raise click.ClickException(
+                f"Could not find node for {resource_type.upper()} ID {numeric_id}. "
+                f"Please specify with --node."
+            )
+        
+        return numeric_id, node
+        
+    else:
+        # Get resource by name
+        if resource_type == "vm":
+            resource = client.find_vm_by_name(resource_id)
+        else:
+            resource = client.find_container_by_name(resource_id)
+            
+        if not resource:
+            raise click.ClickException(f"{resource_type.upper()} '{resource_id}' not found.")
+            
+        # If node is specified, check that it matches
+        if node and resource['node'] != node:
+            raise click.ClickException(
+                f"{resource_type.upper()} '{resource_id}' exists on node '{resource['node']}', "
+                f"not on specified node '{node}'."
+            )
+            
+        return resource['vmid'], resource['node']
 
 # Import commands from separate files to register with Click
 from pyadm.pvecli.vm_commands import *

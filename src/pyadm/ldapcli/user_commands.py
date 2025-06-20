@@ -31,8 +31,38 @@ from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
 def user(username, json_output, csv, all, attributes, add_to_group, remove_from_group, add_to_groups, 
          remove_from_groups, set_password, reset_password, force_password_change, enable, disable, 
          lock, unlock, set_attribute, set_expiry, move_to, clone_to):
-    """
-    Show information about a user specified by [UID], [CN], or [MAIL].
+    """Comprehensive user management and information retrieval.
+    
+    USERNAME: User identifier (username, CN, email, or DN)
+    
+    Supports both read operations (user info, attributes) and write operations
+    (password management, group membership, account status, etc.).
+    
+    \b
+    Information Examples:
+        pyadm ldap user jdoe                           # Basic user info
+        pyadm ldap user jdoe --all                     # All user attributes
+        pyadm ldap user jdoe@company.com --json        # JSON output by email
+        pyadm ldap user jdoe --attributes "mail,department"
+    
+    \b
+    Group Management Examples:
+        pyadm ldap user jdoe --add-to-group "Developers"
+        pyadm ldap user jdoe --remove-from-group "Contractors"
+        pyadm ldap user jdoe --add-to-groups "HR,Finance"
+    
+    \b
+    Account Management Examples:
+        pyadm ldap user jdoe --set-password            # Prompt for new password
+        pyadm ldap user jdoe --reset-password          # Generate random password
+        pyadm ldap user jdoe --enable                  # Enable account
+        pyadm ldap user jdoe --disable                 # Disable account
+        pyadm ldap user jdoe --set-expiry "2024-12-31"
+    
+    \b
+    Attribute Management Examples:
+        pyadm ldap user jdoe --set-attribute "department=Engineering"
+        pyadm ldap user jdoe --set-attribute "phone=555-1234"
     """
     try:
         ldap_client = get_ldap_client()
@@ -173,11 +203,11 @@ def user(username, json_output, csv, all, attributes, add_to_group, remove_from_
             success_count = 0
             for group in groups:
                 # Check if group_dn is a DN or CN
-                if "dc=" in group.lower():
+                if "dc=" in group.lower() and "," in group:
                     group_dn = group
                 else:
                     # It's a CN, get the DN
-                    group_result = ldap_client.get_group_members(group)
+                    group_result = ldap_client.get_group(group)
                     if not group_result:
                         click.echo(f"Warning: No group found with CN '{group}'. Skipping.")
                         continue
@@ -202,11 +232,11 @@ def user(username, json_output, csv, all, attributes, add_to_group, remove_from_
             success_count = 0
             for group in groups:
                 # Check if group_dn is a DN or CN
-                if "dc=" in group.lower():
+                if "dc=" in group.lower() and "," in group:
                     group_dn = group
                 else:
                     # It's a CN, get the DN
-                    group_result = ldap_client.get_group_members(group)
+                    group_result = ldap_client.get_group(group)
                     if not group_result:
                         click.echo(f"Warning: No group found with CN '{group}'. Skipping.")
                         continue
@@ -227,16 +257,21 @@ def user(username, json_output, csv, all, attributes, add_to_group, remove_from_
             
         # Handle add to group
         if add_to_group:
+            logging.info(f"Processing add user '{username}' to group '{add_to_group}'")
             # Check if group_dn is a DN or CN
-            if "dc=" in add_to_group.lower():
+            if "dc=" in add_to_group.lower() and "," in add_to_group:
                 group_dn = add_to_group
+                logging.info(f"Using group DN directly: {group_dn}")
             else:
                 # It's a CN, get the DN
-                group_result = ldap_client.get_group_members(add_to_group)
+                logging.info(f"Looking up group by CN: {add_to_group}")
+                group_result = ldap_client.get_group(add_to_group)
                 if not group_result:
                     raise click.ClickException(f"No group found with CN '{add_to_group}'.")
                 group_dn = group_result[0].entry_dn
+                logging.info(f"Found group DN: {group_dn}")
                 
+            logging.info(f"Adding user DN '{user_dn}' to group DN '{group_dn}'")
             success = ldap_client.add_user_to_group(user_dn, group_dn)
             if success:
                 click.echo(f"User '{username}' added to group '{add_to_group}'.")
@@ -247,11 +282,11 @@ def user(username, json_output, csv, all, attributes, add_to_group, remove_from_
         # Handle remove from group
         if remove_from_group:
             # Check if group_dn is a DN or CN
-            if "dc=" in remove_from_group.lower():
+            if "dc=" in remove_from_group.lower() and "," in remove_from_group:
                 group_dn = remove_from_group
             else:
                 # It's a CN, get the DN
-                group_result = ldap_client.get_group_members(remove_from_group)
+                group_result = ldap_client.get_group(remove_from_group)
                 if not group_result:
                     raise click.ClickException(f"No group found with CN '{remove_from_group}'.")
                 group_dn = group_result[0].entry_dn
@@ -300,8 +335,18 @@ def user(username, json_output, csv, all, attributes, add_to_group, remove_from_
 @ldapcli.command("user-exists")
 @click.argument("username", metavar="[UID, CN, MAIL]")
 def user_exists(username):
-    """
-    Check if a user exists by [UID], [CN], or [MAIL].
+    """Check if a user exists in the directory.
+    
+    USERNAME: User identifier (username, CN, email, or DN)
+    
+    Returns a simple boolean check for user existence. Useful for scripting
+    and conditional operations before performing user management tasks.
+    
+    \b
+    Examples:
+        pyadm ldap user-exists jdoe              # Check by username
+        pyadm ldap user-exists jdoe@company.com  # Check by email
+        pyadm ldap user-exists "John Doe"        # Check by common name
     """
     try:
         exists = get_ldap_client().user_exists(username)

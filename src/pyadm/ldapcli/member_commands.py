@@ -18,8 +18,31 @@ from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
 @click.option("--recursive", "-r", is_flag=True, default=None, help="Show nested group members")
 @click.option("--cn-only", is_flag=True, default=None, help="Show only CN part of DNs")
 def members(group_cn, json_output, csv, all, count, filter, export, recursive, cn_only):
-    """
-    Show members of a group specified by [GROUP].
+    """List all members of a group with flexible output options.
+    
+    GROUP: Group name (CN) or distinguished name (DN)
+    
+    Displays all direct members of a group, with options for recursive membership,
+    filtering, counting, and various output formats for analysis and reporting.
+    
+    \b
+    Basic Examples:
+        pyadm ldap members "Domain Admins"        # List all members
+        pyadm ldap members "HR Team" --count      # Show member count only
+        pyadm ldap members "Developers" --json    # JSON output
+        pyadm ldap members "Sales" --csv          # CSV output
+    
+    \b
+    Advanced Examples:
+        pyadm ldap members "All Users" --recursive          # Include nested groups
+        pyadm ldap members "IT Staff" --filter "john"       # Filter by pattern
+        pyadm ldap members "Managers" --cn-only             # Show only names
+        pyadm ldap members "Admins" --export members.txt    # Export to file
+    
+    \b
+    Filtering and Analysis:
+        pyadm ldap members "Engineering" --filter "senior"  # Find senior engineers
+        pyadm ldap members "Consultants" --count            # Quick headcount
     """
     try:
         ldap_client = get_ldap_client()
