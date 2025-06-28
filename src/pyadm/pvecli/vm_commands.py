@@ -444,3 +444,178 @@ def clone_vm_command(source_vmid, name, node, target_node, storage, full, vmid, 
     except Exception as e:
         logging.error(f"Error cloning VM: {e}")
         raise click.ClickException(f"Error cloning VM: {e}")
+
+
+@vm.command("migrate")
+@click.argument("vmid")
+@click.option("--target", "-t", required=True, help="Target node name")
+@click.option("--node", "-n", default=None, help="Source node name (not needed if VM name is unique)")
+@click.option("--online", is_flag=True, help="Perform online migration (live migration)")
+@click.option("--with-local-disks", is_flag=True, help="Enable migration of VMs with local disks")
+def migrate_vm(vmid, target, node, online, with_local_disks):
+    """
+    Migrate a virtual machine to another node.
+    
+    VMID: VM ID or name to migrate
+    
+    Supports both offline and online (live) migration. Online migration
+    keeps the VM running during the migration process.
+    
+    \b
+    Examples:
+        pyadm pve vm migrate 100 --target node2              # Offline migration
+        pyadm pve vm migrate web-server --target node2       # Migrate by name
+        pyadm pve vm migrate 100 --target node2 --online     # Live migration
+        pyadm pve vm migrate 100 --target node2 --with-local-disks  # Include local storage
+    """
+    try:
+        client = get_pve_client()
+        
+        # Resolve VM ID and source node
+        vm_id, source_node = resolve_resource_id(client, vmid, node, "vm")
+        
+        # Prepare migration options
+        options = {
+            'target': target
+        }
+        
+        if online:
+            options['online'] = 1
+            
+        if with_local_disks:
+            options['with-local-disks'] = 1
+            
+        # Perform migration
+        result = client.migrate_vm(source_node, vm_id, **options)
+        
+        # Handle both string and dictionary results
+        if isinstance(result, dict):
+            task_id = result.get('data', 'Unknown')
+        else:
+            task_id = result
+            
+        migration_type = "online" if online else "offline"
+        click.echo(f"VM '{vmid}' {migration_type} migration from '{source_node}' to '{target}' initiated. Task ID: {task_id}")
+                
+    except Exception as e:
+        logging.error(f"Error migrating VM: {e}")
+        raise click.ClickException(f"Error migrating VM: {e}")
+
+
+@vm.command("config")
+@click.argument("vmid")
+@click.option("--node", "-n", default=None, help="Node name (not needed if VM name is unique)")
+@click.option("--set", "set_configs", multiple=True, help="Set configuration option (format: key=value)")
+@click.option("--delete", "delete_configs", multiple=True, help="Delete configuration option")
+@click.option("--show", is_flag=True, help="Show current configuration")
+@click.option("--json", "-j", "json_output", is_flag=True, help="Output configuration as JSON")
+def config_vm(vmid, node, set_configs, delete_configs, show, json_output):
+    """
+    Configure a virtual machine.
+    
+    VMID: VM ID or name to configure
+    
+    View current configuration or modify VM settings such as memory,
+    CPU cores, network interfaces, disk options, and more.
+    
+    \b
+    Examples:
+        pyadm pve vm config 100 --show                    # Show current config
+        pyadm pve vm config web-server --show --json      # Show as JSON
+        pyadm pve vm config 100 --set "memory=4096"       # Set 4GB RAM
+        pyadm pve vm config 100 --set "cores=4"           # Set 4 CPU cores
+        pyadm pve vm config 100 --set "memory=8192" --set "cores=8"  # Multiple settings
+        pyadm pve vm config 100 --delete "net1"           # Remove network interface
+        pyadm pve vm config 100 --set "net1=virtio,bridge=vmbr1"  # Add network interface
+    """
+    try:
+        client = get_pve_client()
+        
+        # Resolve VM ID and node
+        vm_id, vm_node = resolve_resource_id(client, vmid, node, "vm")
+        
+        # If only showing configuration
+        if show or (not set_configs and not delete_configs):
+            config = client.get_vm_config(vm_node, vm_id)
+            
+            if json_output:
+                click.echo(json.dumps(config, indent=2))
+            else:
+                click.echo(f"Configuration for VM '{vmid}' (ID: {vm_id}) on node '{vm_node}':")
+                click.echo("=" * 60)
+                
+                # Group and display configuration options
+                basic_config = {}
+                disk_config = {}
+                network_config = {}
+                other_config = {}
+                
+                for key, value in config.items():
+                    if key in ['memory', 'cores', 'sockets', 'vcpus', 'cpu', 'numa', 'balloon']:
+                        basic_config[key] = value
+                    elif key.startswith(('scsi', 'ide', 'sata', 'virtio')):
+                        disk_config[key] = value
+                    elif key.startswith('net'):
+                        network_config[key] = value
+                    else:
+                        other_config[key] = value
+                
+                if basic_config:
+                    click.echo("\nBasic Configuration:")
+                    for key, value in sorted(basic_config.items()):
+                        click.echo(f"  {key}: {value}")
+                
+                if disk_config:
+                    click.echo("\nDisk Configuration:")
+                    for key, value in sorted(disk_config.items()):
+                        click.echo(f"  {key}: {value}")
+                
+                if network_config:
+                    click.echo("\nNetwork Configuration:")
+                    for key, value in sorted(network_config.items()):
+                        click.echo(f"  {key}: {value}")
+                
+                if other_config:
+                    click.echo("\nOther Configuration:")
+                    for key, value in sorted(other_config.items()):
+                        click.echo(f"  {key}: {value}")
+            return
+        
+        # Prepare configuration changes
+        config_updates = {}
+        
+        # Handle set operations
+        for config_item in set_configs:
+            if "=" not in config_item:
+                raise click.ClickException(f"Invalid set format. Use 'key=value'. Got: {config_item}")
+            key, value = config_item.split("=", 1)
+            config_updates[key.strip()] = value.strip()
+        
+        # Handle delete operations
+        for key in delete_configs:
+            config_updates[key.strip()] = ""  # Empty value deletes the option
+        
+        if config_updates:
+            # Apply configuration changes
+            result = client.set_vm_config(vm_node, vm_id, config_updates)
+            
+            # Handle both string and dictionary results
+            if isinstance(result, dict):
+                task_id = result.get('data', 'Unknown')
+            else:
+                task_id = result
+            
+            click.echo(f"VM '{vmid}' configuration updated. Task ID: {task_id}")
+            
+            # Show what was changed
+            for key, value in config_updates.items():
+                if value == "":
+                    click.echo(f"  Deleted: {key}")
+                else:
+                    click.echo(f"  Set: {key} = {value}")
+        else:
+            click.echo("No configuration changes specified.")
+                
+    except Exception as e:
+        logging.error(f"Error configuring VM: {e}")
+        raise click.ClickException(f"Error configuring VM: {e}")

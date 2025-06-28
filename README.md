@@ -303,6 +303,20 @@ pyadm pve vm status "web-server-01"
 pyadm pve vm start VM_ID
 pyadm pve vm stop "database-server"
 pyadm pve vm restart 101
+
+# Configure VMs
+pyadm pve vm config 100 --show                    # Show current config
+pyadm pve vm config web-server --show --json      # Show as JSON
+pyadm pve vm config 100 --set "memory=4096"       # Set 4GB RAM
+pyadm pve vm config 100 --set "cores=4"           # Set 4 CPU cores
+pyadm pve vm config 100 --set "memory=8192" --set "cores=8"  # Multiple settings
+pyadm pve vm config 100 --delete "net1"           # Remove network interface
+
+# Migrate VMs between nodes
+pyadm pve vm migrate 100 --target node2              # Offline migration
+pyadm pve vm migrate web-server --target node2       # Migrate by name
+pyadm pve vm migrate 100 --target node2 --online     # Live migration
+pyadm pve vm migrate 100 --target node2 --with-local-disks  # Include local storage
 ```
 
 ### Container Management
@@ -310,15 +324,21 @@ pyadm pve vm restart 101
 **Container Operations:**
 ```shell
 # List all containers
-pyadm pve container list
+pyadm pve ct list
 
 # Filter containers by node
-pyadm pve container list --node pve-node-01
+pyadm pve ct list --node pve-node-01
 
 # Start, stop, or restart containers (works with CT ID or name)
-pyadm pve container start CONTAINER_ID
-pyadm pve container stop "monitoring-ct"
-pyadm pve container restart 201
+pyadm pve ct start CONTAINER_ID
+pyadm pve ct stop "monitoring-ct"
+pyadm pve ct restart 201
+
+# Migrate containers between nodes
+pyadm pve ct migrate 200 --target node2           # Offline migration
+pyadm pve ct migrate web-ct --target node2        # Migrate by name
+pyadm pve ct migrate 200 --target node2 --online  # Online migration
+pyadm pve ct migrate 200 --target node2 --restart # Restart after migration
 ```
 
 ### Infrastructure Management
@@ -637,6 +657,7 @@ This project is licensed under the [MIT License](https://opensource.org/licenses
 - ✅ **Shell Completion**: Comprehensive shell completion for bash, zsh, and fish
 - ✅ **Professional Help System**: Rich help text with practical examples for all commands
 - ✅ **Unified Resource Resolution**: VM and container commands work with both names and IDs
+- ✅ **Migration Support**: Added VM and container migration between Proxmox nodes with online/offline options
 
 ---
 

@@ -302,3 +302,178 @@ def create_ct_command(node, name, template, memory, swap, cores, disk, storage, 
     except Exception as e:
         logging.error(f"Error creating container: {e}")
         raise click.ClickException(f"Error creating container: {e}")
+
+
+@container.command("migrate")
+@click.argument("ctid")
+@click.option("--target", "-t", required=True, help="Target node name")
+@click.option("--node", "-n", default=None, help="Source node name (not needed if container name is unique)")
+@click.option("--online", is_flag=True, help="Perform online migration (container stays running)")
+@click.option("--restart", is_flag=True, help="Restart container after migration")
+def migrate_container(ctid, target, node, online, restart):
+    """
+    Migrate a container to another node.
+    
+    CTID: Container ID or name to migrate
+    
+    Supports both offline and online migration. Online migration
+    keeps the container running during the migration process.
+    
+    \b
+    Examples:
+        pyadm pve ct migrate 200 --target node2           # Offline migration
+        pyadm pve ct migrate web-ct --target node2        # Migrate by name
+        pyadm pve ct migrate 200 --target node2 --online  # Online migration
+        pyadm pve ct migrate 200 --target node2 --restart # Restart after migration
+    """
+    try:
+        client = get_pve_client()
+        
+        # Resolve container ID and source node
+        ct_id, source_node = resolve_resource_id(client, ctid, node, "container")
+        
+        # Prepare migration options
+        options = {
+            'target': target
+        }
+        
+        if online:
+            options['online'] = 1
+            
+        if restart:
+            options['restart'] = 1
+            
+        # Perform migration
+        result = client.migrate_container(source_node, ct_id, **options)
+        
+        # Handle both string and dictionary results
+        if isinstance(result, dict):
+            task_id = result.get('data', 'Unknown')
+        else:
+            task_id = result
+            
+        migration_type = "online" if online else "offline"
+        click.echo(f"Container '{ctid}' {migration_type} migration from '{source_node}' to '{target}' initiated. Task ID: {task_id}")
+                
+    except Exception as e:
+        logging.error(f"Error migrating container: {e}")
+        raise click.ClickException(f"Error migrating container: {e}")
+
+
+@container.command("config")
+@click.argument("ctid")
+@click.option("--node", "-n", default=None, help="Source node name (not needed if container name is unique)")
+@click.option("--set", "set_configs", multiple=True, help="Set configuration option (format: key=value)")
+@click.option("--delete", "delete_configs", multiple=True, help="Delete configuration option")
+@click.option("--show", is_flag=True, help="Show current configuration")
+@click.option("--json", "-j", "json_output", is_flag=True, help="Output configuration as JSON")
+def config_container(ctid, node, set_configs, delete_configs, show, json_output):
+    """
+    Configure a container.
+    
+    CTID: Container ID or name to configure
+    
+    View current configuration or modify container settings such as memory,
+    CPU cores, network interfaces, mount points, and more.
+    
+    \b
+    Examples:
+        pyadm pve ct config 200 --show                     # Show current config
+        pyadm pve ct config web-ct --show --json           # Show as JSON
+        pyadm pve ct config 200 --set "memory=2048"        # Set 2GB RAM
+        pyadm pve ct config 200 --set "cores=2"            # Set 2 CPU cores
+        pyadm pve ct config 200 --set "memory=4096" --set "cores=4"  # Multiple settings
+        pyadm pve ct config 200 --delete "net1"            # Remove network interface
+        pyadm pve ct config 200 --set "net1=name=eth1,bridge=vmbr1"  # Add network interface
+    """
+    try:
+        client = get_pve_client()
+        
+        # Resolve container ID and node
+        ct_id, ct_node = resolve_resource_id(client, ctid, node, "container")
+        
+        # If only showing configuration
+        if show or (not set_configs and not delete_configs):
+            config = client.get_container_config(ct_node, ct_id)
+            
+            if json_output:
+                click.echo(json.dumps(config, indent=2))
+            else:
+                click.echo(f"Configuration for Container '{ctid}' (ID: {ct_id}) on node '{ct_node}':")
+                click.echo("=" * 60)
+                
+                # Group and display configuration options
+                basic_config = {}
+                storage_config = {}
+                network_config = {}
+                other_config = {}
+                
+                for key, value in config.items():
+                    if key in ['memory', 'cores', 'cpulimit', 'cpuunits', 'swap', 'hostname', 'ostype']:
+                        basic_config[key] = value
+                    elif key.startswith(('mp', 'rootfs')):
+                        storage_config[key] = value
+                    elif key.startswith('net'):
+                        network_config[key] = value
+                    else:
+                        other_config[key] = value
+                
+                if basic_config:
+                    click.echo("\nBasic Configuration:")
+                    for key, value in sorted(basic_config.items()):
+                        click.echo(f"  {key}: {value}")
+                
+                if storage_config:
+                    click.echo("\nStorage Configuration:")
+                    for key, value in sorted(storage_config.items()):
+                        click.echo(f"  {key}: {value}")
+                
+                if network_config:
+                    click.echo("\nNetwork Configuration:")
+                    for key, value in sorted(network_config.items()):
+                        click.echo(f"  {key}: {value}")
+                
+                if other_config:
+                    click.echo("\nOther Configuration:")
+                    for key, value in sorted(other_config.items()):
+                        click.echo(f"  {key}: {value}")
+            return
+        
+        # Prepare configuration changes
+        config_updates = {}
+        
+        # Handle set operations
+        for config_item in set_configs:
+            if "=" not in config_item:
+                raise click.ClickException(f"Invalid set format. Use 'key=value'. Got: {config_item}")
+            key, value = config_item.split("=", 1)
+            config_updates[key.strip()] = value.strip()
+        
+        # Handle delete operations
+        for key in delete_configs:
+            config_updates[key.strip()] = ""  # Empty value deletes the option
+        
+        if config_updates:
+            # Apply configuration changes
+            result = client.set_container_config(ct_node, ct_id, config_updates)
+            
+            # Handle both string and dictionary results
+            if isinstance(result, dict):
+                task_id = result.get('data', 'Unknown')
+            else:
+                task_id = result
+            
+            click.echo(f"Container '{ctid}' configuration updated. Task ID: {task_id}")
+            
+            # Show what was changed
+            for key, value in config_updates.items():
+                if value == "":
+                    click.echo(f"  Deleted: {key}")
+                else:
+                    click.echo(f"  Set: {key} = {value}")
+        else:
+            click.echo("No configuration changes specified.")
+                
+    except Exception as e:
+        logging.error(f"Error configuring container: {e}")
+        raise click.ClickException(f"Error configuring container: {e}")

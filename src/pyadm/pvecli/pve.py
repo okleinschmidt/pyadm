@@ -926,3 +926,157 @@ class PVEClient:
         except Exception as e:
             self.logger.error(f"Error getting network config file on node '{node}': {e}")
             raise
+
+    def migrate_vm(self, node: str, vmid: int, **options) -> Dict[str, Any]:
+        """
+        Migrate a VM to another node.
+        
+        Args:
+            node: Source node name
+            vmid: VM ID
+            **options: Migration options (target, online, with-local-disks, etc.)
+            
+        Returns:
+            Task result
+        """
+        try:
+            # Check if source node is online
+            online_nodes = self.get_online_nodes()
+            if node not in online_nodes:
+                raise Exception(f"Source node '{node}' is offline, cannot migrate VM")
+                
+            # Check if target node is online
+            target = options.get('target')
+            if target and target not in online_nodes:
+                raise Exception(f"Target node '{target}' is offline, cannot migrate VM")
+                
+            # Clean up options for API call
+            api_options = {}
+            for key, value in options.items():
+                if key == 'with-local-disks':
+                    api_options['with-local-disks'] = value
+                else:
+                    api_options[key] = value
+                    
+            return self.api.nodes(node).qemu(vmid).migrate.post(**api_options)
+        except Exception as e:
+            self.logger.error(f"Error migrating VM {vmid} from node '{node}': {e}")
+            raise
+
+    def migrate_container(self, node: str, vmid: int, **options) -> Dict[str, Any]:
+        """
+        Migrate a container to another node.
+        
+        Args:
+            node: Source node name
+            vmid: Container ID
+            **options: Migration options (target, online, restart, etc.)
+            
+        Returns:
+            Task result
+        """
+        try:
+            # Check if source node is online
+            online_nodes = self.get_online_nodes()
+            if node not in online_nodes:
+                raise Exception(f"Source node '{node}' is offline, cannot migrate container")
+                
+            # Check if target node is online
+            target = options.get('target')
+            if target and target not in online_nodes:
+                raise Exception(f"Target node '{target}' is offline, cannot migrate container")
+                
+            return self.api.nodes(node).lxc(vmid).migrate.post(**options)
+        except Exception as e:
+            self.logger.error(f"Error migrating container {vmid} from node '{node}': {e}")
+            raise
+
+    def get_vm_config(self, node: str, vmid: int) -> Dict[str, Any]:
+        """
+        Get VM configuration.
+        
+        Args:
+            node: Node name
+            vmid: VM ID
+            
+        Returns:
+            VM configuration dictionary
+        """
+        try:
+            # Check if node is online
+            online_nodes = self.get_online_nodes()
+            if node not in online_nodes:
+                raise Exception(f"Node '{node}' is offline, cannot get VM config")
+                
+            return self.api.nodes(node).qemu(vmid).config.get()
+        except Exception as e:
+            self.logger.error(f"Error getting VM {vmid} config on node '{node}': {e}")
+            raise
+
+    def set_vm_config(self, node: str, vmid: int, config: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Set VM configuration options.
+        
+        Args:
+            node: Node name
+            vmid: VM ID
+            config: Configuration options dictionary
+            
+        Returns:
+            Task result
+        """
+        try:
+            # Check if node is online
+            online_nodes = self.get_online_nodes()
+            if node not in online_nodes:
+                raise Exception(f"Node '{node}' is offline, cannot set VM config")
+                
+            return self.api.nodes(node).qemu(vmid).config.put(**config)
+        except Exception as e:
+            self.logger.error(f"Error setting VM {vmid} config on node '{node}': {e}")
+            raise
+
+    def get_container_config(self, node: str, vmid: int) -> Dict[str, Any]:
+        """
+        Get container configuration.
+        
+        Args:
+            node: Node name
+            vmid: Container ID
+            
+        Returns:
+            Container configuration dictionary
+        """
+        try:
+            # Check if node is online
+            online_nodes = self.get_online_nodes()
+            if node not in online_nodes:
+                raise Exception(f"Node '{node}' is offline, cannot get container config")
+                
+            return self.api.nodes(node).lxc(vmid).config.get()
+        except Exception as e:
+            self.logger.error(f"Error getting container {vmid} config on node '{node}': {e}")
+            raise
+
+    def set_container_config(self, node: str, vmid: int, config: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Set container configuration options.
+        
+        Args:
+            node: Node name
+            vmid: Container ID
+            config: Configuration options dictionary
+            
+        Returns:
+            Task result
+        """
+        try:
+            # Check if node is online
+            online_nodes = self.get_online_nodes()
+            if node not in online_nodes:
+                raise Exception(f"Node '{node}' is offline, cannot set container config")
+                
+            return self.api.nodes(node).lxc(vmid).config.put(**config)
+        except Exception as e:
+            self.logger.error(f"Error setting container {vmid} config on node '{node}': {e}")
+            raise

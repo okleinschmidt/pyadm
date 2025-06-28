@@ -38,14 +38,18 @@ def list_nodes(json_output, output):
             row = []
             for field in fields:
                 if field in node_info:
-                    if field == 'uptime' and isinstance(node_info[field], int):
+                    value = node_info[field]
+                    if field == 'uptime' and isinstance(value, (int, float)):
                         # Convert seconds to hours for uptime
-                        row.append(f"{node_info[field] / 3600:.2f} hours")
-                    elif field in ['maxmem', 'maxdisk'] and isinstance(node_info[field], int):
+                        row.append(f"{value / 3600:.2f} hours")
+                    elif field in ['maxmem', 'maxdisk'] and isinstance(value, (int, float)):
                         # Convert bytes to GB for memory and disk
-                        row.append(f"{node_info[field] / (1024**3):.2f} GB")
+                        row.append(f"{value / (1024**3):.2f} GB")
+                    elif field == 'cpu' and isinstance(value, (int, float)):
+                        # Format CPU percentage
+                        row.append(f"{value:.1f}%")
                     else:
-                        row.append(node_info[field])
+                        row.append(str(value))
                 else:
                     row.append("")
             table_data.append(row)
@@ -77,26 +81,57 @@ def get_node_status(node_name, json_output):
             click.echo(f"Status: {status.get('status', 'unknown')}")
             
             if 'uptime' in status:
-                uptime_hours = status['uptime'] / 3600
-                click.echo(f"Uptime: {uptime_hours:.2f} hours")
+                uptime_val = status['uptime']
+                if isinstance(uptime_val, (int, float)):
+                    uptime_hours = uptime_val / 3600
+                    click.echo(f"Uptime: {uptime_hours:.2f} hours")
+                else:
+                    click.echo(f"Uptime: {uptime_val}")
                 
             if 'loadavg' in status:
                 load = status['loadavg']
                 if isinstance(load, list) and len(load) >= 3:
-                    click.echo(f"Load average: {load[0]:.2f}, {load[1]:.2f}, {load[2]:.2f}")
+                    # Ensure all load values are numeric
+                    try:
+                        load_vals = [float(x) for x in load[:3]]
+                        click.echo(f"Load average: {load_vals[0]:.2f}, {load_vals[1]:.2f}, {load_vals[2]:.2f}")
+                    except (ValueError, TypeError):
+                        click.echo(f"Load average: {load}")
+                else:
+                    click.echo(f"Load average: {load}")
                     
             if 'cpu' in status:
-                click.echo(f"CPU usage: {status['cpu']:.2f}%")
+                cpu_val = status['cpu']
+                if isinstance(cpu_val, (int, float)):
+                    click.echo(f"CPU usage: {cpu_val:.2f}%")
+                else:
+                    click.echo(f"CPU usage: {cpu_val}")
                 
-            if 'memory' in status and 'total' in status['memory']:
-                mem_gb = status['memory']['total'] / (1024**3)
-                used_gb = status['memory'].get('used', 0) / (1024**3)
-                click.echo(f"Memory: {used_gb:.2f} GB used of {mem_gb:.2f} GB")
+            if 'memory' in status and isinstance(status['memory'], dict) and 'total' in status['memory']:
+                try:
+                    mem_total = status['memory']['total']
+                    mem_used = status['memory'].get('used', 0)
+                    if isinstance(mem_total, (int, float)) and isinstance(mem_used, (int, float)):
+                        mem_gb = mem_total / (1024**3)
+                        used_gb = mem_used / (1024**3)
+                        click.echo(f"Memory: {used_gb:.2f} GB used of {mem_gb:.2f} GB")
+                    else:
+                        click.echo(f"Memory: {mem_used} used of {mem_total}")
+                except (TypeError, ValueError):
+                    click.echo(f"Memory: {status['memory']}")
                 
-            if 'swap' in status and 'total' in status['swap']:
-                swap_gb = status['swap']['total'] / (1024**3)
-                used_gb = status['swap'].get('used', 0) / (1024**3)
-                click.echo(f"Swap: {used_gb:.2f} GB used of {swap_gb:.2f} GB")
+            if 'swap' in status and isinstance(status['swap'], dict) and 'total' in status['swap']:
+                try:
+                    swap_total = status['swap']['total']
+                    swap_used = status['swap'].get('used', 0)
+                    if isinstance(swap_total, (int, float)) and isinstance(swap_used, (int, float)):
+                        swap_gb = swap_total / (1024**3)
+                        used_swap_gb = swap_used / (1024**3)
+                        click.echo(f"Swap: {used_swap_gb:.2f} GB used of {swap_gb:.2f} GB")
+                    else:
+                        click.echo(f"Swap: {swap_used} used of {swap_total}")
+                except (TypeError, ValueError):
+                    click.echo(f"Swap: {status['swap']}")
                 
     except Exception as e:
         logging.error(f"Error getting node status: {e}")
