@@ -4,6 +4,7 @@ import sys
 import logging
 from tabulate import tabulate
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client
+from pyadm.pvecli.list_utils import sort_items, SortError
 
 
 @pvecli.group("node", context_settings={'help_option_names': ['-h', '--help']})
@@ -15,7 +16,8 @@ def node():
 @node.command("list")
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", default=None, help="Comma-separated list of fields to display")
-def list_nodes(json_output, output):
+@click.option("--sort", default=None, help="Sort by fields (e.g. 'node,-status')")
+def list_nodes(json_output, output, sort):
     """
     List all nodes in the cluster.
     """
@@ -23,6 +25,12 @@ def list_nodes(json_output, output):
         client = get_pve_client()
         nodes = client.get_nodes()
         
+        if sort:
+            try:
+                nodes = sort_items(nodes, sort, allowed_fields={"node", "status", "uptime", "cpu", "maxmem", "maxdisk"})
+            except SortError as e:
+                raise click.ClickException(str(e))
+
         if json_output:
             click.echo(json.dumps(nodes, indent=2))
             return

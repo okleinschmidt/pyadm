@@ -3,12 +3,14 @@ import json
 import sys
 import logging
 import csv as _csv
+from tabulate import tabulate
 from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
 
 
 # Show information about a user
 @ldapcli.command("user")
-@click.argument("username", metavar="[UID, CN, MAIL]")
+@click.argument("username", required=False, metavar="[UID, CN, MAIL]")
+@click.option("--list", "list_users", is_flag=True, default=None, help="List all users")
 @click.option("--all", "-a", is_flag=True, default=None, help="Show all attributes")
 @click.option("--json", "-j", "json_output", is_flag=True, default=None, help="Output as JSON")
 @click.option("--csv", is_flag=True, default=None, help="Output as CSV")
@@ -28,7 +30,7 @@ from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
 @click.option("--set-expiry", default=None, help="Set account expiry date (format: YYYY-MM-DD)")
 @click.option("--move-to", default=None, help="Move user to specified OU (by DN)")
 @click.option("--clone-to", default=None, help="Clone user to new username")
-def user(username, json_output, csv, all, attributes, add_to_group, remove_from_group, add_to_groups, 
+def user(username, list_users, json_output, csv, all, attributes, add_to_group, remove_from_group, add_to_groups, 
          remove_from_groups, set_password, reset_password, force_password_change, enable, disable, 
          lock, unlock, set_attribute, set_expiry, move_to, clone_to):
     """Comprehensive user management and information retrieval.
@@ -44,6 +46,7 @@ def user(username, json_output, csv, all, attributes, add_to_group, remove_from_
         pyadm ldap user jdoe --all                     # All user attributes
         pyadm ldap user jdoe@company.com --json        # JSON output by email
         pyadm ldap user jdoe --attributes "mail,department"
+        pyadm ldap user --list                         # List all users
     
     \b
     Group Management Examples:
@@ -66,6 +69,85 @@ def user(username, json_output, csv, all, attributes, add_to_group, remove_from_
     """
     try:
         ldap_client = get_ldap_client()
+
+        if list_users:
+            if username:
+                raise click.ClickException("Use --list without USERNAME.")
+            if (add_to_group or remove_from_group or add_to_groups or remove_from_groups or
+                set_password or reset_password or force_password_change or enable or disable or 
+                lock or unlock or set_attribute or set_expiry or move_to or clone_to):
+                raise click.ClickException("Cannot combine --list with user management options.")
+
+            def _first_value(attr_dict, key):
+                values = attr_dict.get(key)
+                if values is None:
+                    for attr_key, attr_values in attr_dict.items():
+                        if attr_key.lower() == key.lower():
+                            values = attr_values
+                            break
+                if not values:
+                    return None
+                if isinstance(values, list):
+                    return str(values[0]) if values else None
+                return str(values)
+
+            def _stringify_attrs(attr_dict):
+                return {str(k): [str(v) for v in vals] for k, vals in attr_dict.items()}
+
+            allow_attribute_fallback = False
+            if all:
+                attrs = ["*"]
+            elif attributes:
+                attrs = [a.strip() for a in attributes.split(",") if a.strip()]
+            else:
+                attrs = ["uid", "cn", "mail", "displayName", "sAMAccountName"]
+                allow_attribute_fallback = True
+
+            results = ldap_client.list_users(attrs, allow_attribute_fallback=allow_attribute_fallback)
+
+            if json_output:
+                payload = []
+                for entry in results:
+                    attrs_dict = entry.entry_attributes_as_dict
+                    payload.append({"dn": entry.entry_dn, "attributes": _stringify_attrs(attrs_dict)})
+                print(json.dumps(payload))
+                return
+
+            if csv:
+                writer = _csv.writer(sys.stdout)
+                fields = []
+                if attrs and "*" not in attrs:
+                    fields = attrs
+                elif results:
+                    fields = sorted({key for entry in results for key in entry.entry_attributes_as_dict.keys()})
+                writer.writerow(["dn"] + fields)
+                for entry in results:
+                    attrs_dict = entry.entry_attributes_as_dict
+                    row = [entry.entry_dn]
+                    for field in fields:
+                        values = attrs_dict.get(field, [])
+                        row.append(", ".join(map(str, values)))
+                    writer.writerow(row)
+                return
+
+            if not results:
+                click.echo("No users found.")
+                return
+
+            fields = ["uid", "cn", "mail", "displayName"]
+            table_data = []
+            for entry in results:
+                attrs_dict = entry.entry_attributes_as_dict
+                uid = _first_value(attrs_dict, "uid") or _first_value(attrs_dict, "sAMAccountName")
+                cn = _first_value(attrs_dict, "cn")
+                mail = _first_value(attrs_dict, "mail")
+                display_name = _first_value(attrs_dict, "displayName")
+                table_data.append([uid or "", cn or "", mail or "", display_name or ""])
+            click.echo(tabulate(table_data, headers=fields))
+            return
+
+        if not username:
+            raise click.ClickException("USERNAME is required unless --list is provided.")
         
         # Get user info first as most operations need the DN
         user_result = None

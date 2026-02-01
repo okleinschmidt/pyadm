@@ -5,6 +5,7 @@ import os
 import logging
 from tabulate import tabulate
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id
+from pyadm.pvecli.list_utils import sort_items, SortError
 
 
 @pvecli.group("ct", context_settings={'help_option_names': ['-h', '--help']})
@@ -18,7 +19,8 @@ def container():
 @click.option("--status", "-s", default=None, help="Filter by status (running, stopped)")
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", default=None, help="Comma-separated list of fields to display")
-def list_containers(node, status, json_output, output):
+@click.option("--sort", default=None, help="Sort by fields (e.g. 'name,-id')")
+def list_containers(node, status, json_output, output, sort):
     """
     List containers.
     """
@@ -30,6 +32,12 @@ def list_containers(node, status, json_output, output):
         if status:
             containers = [c for c in containers if c.get('status') == status]
             
+        if sort:
+            try:
+                containers = sort_items(containers, sort, allowed_fields={"id", "vmid", "name", "status", "node"}, field_map={"id": "vmid"})
+            except SortError as e:
+                raise click.ClickException(str(e))
+
         if json_output:
             click.echo(json.dumps(containers, indent=2))
             return
@@ -158,6 +166,37 @@ def stop_container(vmid, node):
     except Exception as e:
         logging.error(f"Error stopping container: {e}")
         raise click.ClickException(f"Error stopping container: {e}")
+
+
+@container.command("delete")
+@click.argument("vmid")
+@click.option("--node", "-n", default=None, help="Node name (not needed if container name is unique)")
+@click.option("--purge/--no-purge", default=True, help="Purge from job configurations (default: purge)")
+@click.option("--destroy-unreferenced-disks/--keep-unreferenced-disks", default=True, help="Destroy unreferenced disks owned by guest (default: destroy)")
+def delete_container(vmid, node, purge, destroy_unreferenced_disks):
+    """
+    Delete a container by ID or name.
+    """
+    try:
+        client = get_pve_client()
+
+        # Resolve container ID and node
+        ct_id, node = resolve_resource_id(client, vmid, node, "container")
+
+        # Delete container
+        result = client.delete_container(node, ct_id, purge=purge, destroy_unreferenced_disks=destroy_unreferenced_disks)
+
+        # Handle both string and dictionary results
+        if isinstance(result, dict):
+            task_id = result.get('data', 'Unknown')
+        else:
+            task_id = result  # Assume result is a string containing task ID
+
+        click.echo(f"Container '{vmid}' delete initiated. Task ID: {task_id}")
+
+    except Exception as e:
+        logging.error(f"Error deleting container: {e}")
+        raise click.ClickException(f"Error deleting container: {e}")
 
 
 @container.command("list-templates")

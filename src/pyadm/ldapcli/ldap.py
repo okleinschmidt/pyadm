@@ -280,7 +280,7 @@ class LDAPClient:
             else:
                 raise ValueError(f"LDAP connection error: {e}")
 
-    def search(self, search_filter: str, attributes: Optional[List[str]] = None) -> List[Any]:
+    def search(self, search_filter: str, attributes: Optional[List[str]] = None, log_errors: bool = True) -> List[Any]:
         """
         Perform an LDAP search and return the result entries.
 
@@ -296,11 +296,120 @@ class LDAPClient:
             self.conn.search(base_dn, search_filter, attributes=attributes or [])
             return self.conn.entries
         except LDAPException as e:
-            logging.error(f"LDAP search failed: {e}")
+            if log_errors:
+                logging.error(f"LDAP search failed: {e}")
             raise
         except Exception as e:
-            logging.error(f"LDAP error: {e}")
+            if log_errors:
+                logging.error(f"LDAP error: {e}")
             raise
+
+    def _search_any(self, search_filters: List[str], attributes: Optional[List[str]] = None) -> List[Any]:
+        results: List[Any] = []
+        seen_dns = set()
+        for search_filter in search_filters:
+            try:
+                entries = self.search(search_filter, attributes, log_errors=False)
+            except LDAPException as e:
+                message = str(e).lower()
+                if "invalid class" in message or ("objectclass" in message and "invalid" in message):
+                    continue
+                raise
+            for entry in entries:
+                dn = getattr(entry, "entry_dn", None)
+                key = dn or str(entry)
+                if key in seen_dns:
+                    continue
+                seen_dns.add(key)
+                results.append(entry)
+        return results
+
+    def _parse_invalid_attribute(self, error_message: str) -> Optional[str]:
+        message = error_message.lower()
+        if "invalid attribute type" not in message:
+            return None
+        parts = error_message.split()
+        if not parts:
+            return None
+        return parts[-1].strip()
+
+    def _is_group_entry(self, entry: Any) -> bool:
+        attrs = getattr(entry, "entry_attributes_as_dict", {}) or {}
+        object_classes = [str(v).lower() for v in attrs.get("objectClass", [])]
+        if object_classes:
+            group_classes = {"group", "groupofnames", "groupofuniquenames", "posixgroup"}
+            person_classes = {"person", "inetorgperson", "organizationalperson", "user", "posixaccount"}
+            return any(cls in group_classes for cls in object_classes) and not any(cls in person_classes for cls in object_classes)
+        # Fallback: treat entries with common group attributes as groups.
+        group_attrs = {"member", "memberuid", "uniquemember"}
+        return any(key in attrs for key in group_attrs)
+
+    def list_users(self, attributes: Optional[List[str]] = None, allow_attribute_fallback: bool = False) -> List[Any]:
+        """
+        List users in the directory.
+
+        Args:
+            attributes (Optional[List[str]]): Attributes to retrieve.
+
+        Returns:
+            List[Any]: List of LDAP entries for users.
+        """
+        filters = [
+            "(objectClass=person)",
+            "(objectClass=inetOrgPerson)",
+            "(objectClass=posixAccount)",
+            "(objectClass=user)",
+        ]
+        attrs = list(attributes) if attributes else None
+        if allow_attribute_fallback and attrs and "*" not in attrs:
+            while True:
+                try:
+                    return self._search_any(filters, attrs)
+                except LDAPException as e:
+                    invalid_attr = self._parse_invalid_attribute(str(e))
+                    if invalid_attr:
+                        attrs = [a for a in attrs if a.lower() != invalid_attr.lower()]
+                        if not attrs:
+                            raise
+                        continue
+                    raise
+        return self._search_any(filters, attrs)
+
+    def list_groups(self, attributes: Optional[List[str]] = None, allow_attribute_fallback: bool = False) -> List[Any]:
+        """
+        List groups in the directory.
+
+        Args:
+            attributes (Optional[List[str]]): Attributes to retrieve.
+
+        Returns:
+            List[Any]: List of LDAP entries for groups.
+        """
+        filters = [
+            "(objectClass=group)",
+            "(objectClass=groupOfNames)",
+            "(objectClass=groupOfUniqueNames)",
+            "(objectClass=posixGroup)",
+        ]
+        search_attrs = list(attributes) if attributes else []
+        if "*" not in search_attrs and not any(a.lower() == "objectclass" for a in search_attrs):
+            search_attrs.append("objectClass")
+        if allow_attribute_fallback and "*" not in search_attrs:
+            while True:
+                try:
+                    entries = self._search_any(filters, search_attrs)
+                    break
+                except LDAPException as e:
+                    invalid_attr = self._parse_invalid_attribute(str(e))
+                    if invalid_attr:
+                        search_attrs = [a for a in search_attrs if a.lower() != invalid_attr.lower()]
+                        if not search_attrs:
+                            raise
+                        continue
+                    raise
+        else:
+            entries = self._search_any(filters, search_attrs)
+        return [entry for entry in entries if self._is_group_entry(entry)]
 
     def get_user(self, username: str, attributes: Optional[List[str]] = None) -> List[Any]:
         """

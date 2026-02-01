@@ -176,6 +176,14 @@ class OfflinePVEClient:
     def stop_container(self, node: str, vmid: int) -> Dict[str, Any]:
         """Simulate stopping a container."""
         return {'data': f'UPID:node{node}:{datetime.now().strftime("%Y%m%d")}:lxc-stop:'}
+
+    def delete_vm(self, node: str, vmid: int, purge: bool = True, destroy_unreferenced_disks: bool = True) -> Dict[str, Any]:
+        """Simulate deleting a VM."""
+        return {'data': f'UPID:node{node}:{datetime.now().strftime("%Y%m%d")}:qemu-delete:'}
+
+    def delete_container(self, node: str, vmid: int, purge: bool = True, destroy_unreferenced_disks: bool = True) -> Dict[str, Any]:
+        """Simulate deleting a container."""
+        return {'data': f'UPID:node{node}:{datetime.now().strftime("%Y%m%d")}:lxc-delete:'}
     
     def get_storage(self, node: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get sample storage data."""

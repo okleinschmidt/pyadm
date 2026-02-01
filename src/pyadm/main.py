@@ -82,8 +82,8 @@ _pyadm_completion() {
 
     local subcommands="config elastic ldap pve version completion"
     local pve_commands="vm ct node storage network"
-    local vm_commands="list status start stop shutdown create clone list-templates"
-    local ct_commands="list status start stop create list-templates"
+    local vm_commands="list status start stop shutdown delete create clone list-templates"
+    local ct_commands="list status start stop delete create list-templates"
     local node_commands="list status"
     local storage_commands="list"
 
@@ -152,6 +152,7 @@ _pyadm() {
                                 'start[Start VM]' \\
                                 'stop[Stop VM]' \\
                                 'shutdown[Shutdown VM]' \\
+                                'delete[Delete VM]' \\
                                 'create[Create VM]' \\
                                 'clone[Clone VM]' \\
                                 'list-templates[List VM templates]'
@@ -162,6 +163,7 @@ _pyadm() {
                                 'status[Get container status]' \\
                                 'start[Start container]' \\
                                 'stop[Stop container]' \\
+                                'delete[Delete container]' \\
                                 'create[Create container]' \\
                                 'list-templates[List container templates]'
                             ;;
@@ -220,6 +222,7 @@ complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcom
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from vm' -a 'start' -d 'Start VM'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from vm' -a 'stop' -d 'Stop VM'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from vm' -a 'shutdown' -d 'Shutdown VM'
+complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from vm' -a 'delete' -d 'Delete VM'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from vm' -a 'create' -d 'Create VM'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from vm' -a 'clone' -d 'Clone VM'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from vm' -a 'list-templates' -d 'List VM templates'
@@ -229,6 +232,7 @@ complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcom
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from ct' -a 'status' -d 'Get container status'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from ct' -a 'start' -d 'Start container'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from ct' -a 'stop' -d 'Stop container'
+complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from ct' -a 'delete' -d 'Delete container'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from ct' -a 'create' -d 'Create container'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcommand_from ct' -a 'list-templates' -d 'List container templates'
 

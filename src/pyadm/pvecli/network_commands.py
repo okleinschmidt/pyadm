@@ -3,6 +3,7 @@ import json
 import logging
 from tabulate import tabulate
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve
+from pyadm.pvecli.list_utils import sort_items, SortError
 
 
 @pvecli.group("network")
@@ -19,7 +20,8 @@ def network():
 @click.option("--active", is_flag=True, help="Show only active interfaces")
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", default=None, help="Comma-separated list of fields to display")
-def list_interfaces(node, type, active, json_output, output):
+@click.option("--sort", default=None, help="Sort by fields (e.g. 'iface,-type')")
+def list_interfaces(node, type, active, json_output, output, sort):
     """
     List network interfaces on a node.
     """
@@ -35,6 +37,16 @@ def list_interfaces(node, type, active, json_output, output):
         if active:
             interfaces = [iface for iface in interfaces if iface.get('active')]
             
+        if sort:
+            try:
+                interfaces = sort_items(
+                    interfaces,
+                    sort,
+                    allowed_fields={"iface", "type", "active", "method", "address", "netmask", "gateway", "bridge_ports"},
+                )
+            except SortError as e:
+                raise click.ClickException(str(e))
+
         if json_output:
             click.echo(json.dumps(interfaces, indent=2))
             return

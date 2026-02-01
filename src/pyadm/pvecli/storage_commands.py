@@ -4,6 +4,7 @@ import sys
 import logging
 from tabulate import tabulate
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client
+from pyadm.pvecli.list_utils import sort_items, SortError
 
 
 @pvecli.group("storage", context_settings={'help_option_names': ['-h', '--help']})
@@ -17,7 +18,8 @@ def storage():
 @click.option("--type", "-t", default=None, help="Filter by storage type (dir, nfs, etc.)")
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", default=None, help="Comma-separated list of fields to display")
-def list_storage(node, type, json_output, output):
+@click.option("--sort", default=None, help="Sort by fields (e.g. 'storage,-used')")
+def list_storage(node, type, json_output, output, sort):
     """
     List storage resources.
     """
@@ -29,6 +31,16 @@ def list_storage(node, type, json_output, output):
         if type:
             storage_list = [s for s in storage_list if s.get('type') == type]
             
+        if sort:
+            try:
+                storage_list = sort_items(
+                    storage_list,
+                    sort,
+                    allowed_fields={"storage", "type", "content", "node", "active", "total", "used", "avail"},
+                )
+            except SortError as e:
+                raise click.ClickException(str(e))
+
         if json_output:
             click.echo(json.dumps(storage_list, indent=2))
             return

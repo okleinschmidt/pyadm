@@ -21,6 +21,8 @@ def ldapcli(server):
         pyadm ldap user jdoe                           # Get user information
         pyadm ldap groups jdoe                        # Show user's group memberships
         pyadm ldap members "Domain Admins"            # List group members
+        pyadm ldap user --list                        # List all users
+        pyadm ldap groups --list                      # List all groups
         pyadm ldap user-exists jdoe                   # Check if user exists
         pyadm ldap group-exists "HR Team"             # Check if group exists
         

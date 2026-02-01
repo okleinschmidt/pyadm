@@ -70,6 +70,14 @@ class PVEClient:
         except Exception as e:
             self.logger.error(f"Failed to connect to Proxmox VE: {e}")
             raise
+
+    def _build_delete_params(self, purge: bool, destroy_unreferenced_disks: bool) -> Dict[str, int]:
+        params: Dict[str, int] = {}
+        if purge:
+            params['purge'] = 1
+        if destroy_unreferenced_disks:
+            params['destroy-unreferenced-disks'] = 1
+        return params
     
     def get_nodes(self) -> List[Dict[str, Any]]:
         """
@@ -402,6 +410,52 @@ class PVEClient:
             return self.api.nodes(node).lxc(vmid).status.stop.post()
         except Exception as e:
             self.logger.error(f"Error stopping container {vmid} on node '{node}': {e}")
+            raise
+
+    def delete_vm(self, node: str, vmid: int, purge: bool = True, destroy_unreferenced_disks: bool = True) -> Dict[str, Any]:
+        """
+        Delete a VM.
+
+        Args:
+            node: Node name
+            vmid: VM ID
+            purge: Remove from job configurations
+            destroy_unreferenced_disks: Destroy unreferenced disks owned by guest
+
+        Returns:
+            Task result
+        """
+        try:
+            online_nodes = self.get_online_nodes()
+            if node not in online_nodes:
+                raise Exception(f"Node '{node}' is offline, cannot delete VM")
+            params = self._build_delete_params(purge, destroy_unreferenced_disks)
+            return self.api.nodes(node).qemu(vmid).delete(**params)
+        except Exception as e:
+            self.logger.error(f"Error deleting VM {vmid} on node '{node}': {e}")
+            raise
+
+    def delete_container(self, node: str, vmid: int, purge: bool = True, destroy_unreferenced_disks: bool = True) -> Dict[str, Any]:
+        """
+        Delete a container.
+
+        Args:
+            node: Node name
+            vmid: Container ID
+            purge: Remove from job configurations
+            destroy_unreferenced_disks: Destroy unreferenced disks owned by guest
+
+        Returns:
+            Task result
+        """
+        try:
+            online_nodes = self.get_online_nodes()
+            if node not in online_nodes:
+                raise Exception(f"Node '{node}' is offline, cannot delete container")
+            params = self._build_delete_params(purge, destroy_unreferenced_disks)
+            return self.api.nodes(node).lxc(vmid).delete(**params)
+        except Exception as e:
+            self.logger.error(f"Error deleting container {vmid} on node '{node}': {e}")
             raise
     
     def get_storage(self, node: Optional[str] = None) -> List[Dict[str, Any]]:

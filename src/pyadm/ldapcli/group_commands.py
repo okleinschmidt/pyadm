@@ -3,16 +3,18 @@ import json
 import sys
 import logging
 import csv as _csv
+from tabulate import tabulate
 from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
 
 
 # Show groups a user belongs to
 @ldapcli.command("groups")
-@click.argument("name", metavar="[NAME]")
+@click.argument("name", required=False, metavar="[NAME]")
 @click.option("--json", "-j", "json_output", is_flag=True, default=None, help="Output as JSON")
 @click.option("--csv", is_flag=True, default=None, help="Output as CSV")
 @click.option("--all", "-a", is_flag=True, default=None, help="Show all attributes")
 @click.option("--attributes", "-A", default=None, help="Comma-separated list of attributes to show")
+@click.option("--list", "list_groups", is_flag=True, default=None, help="List all groups")
 @click.option("--create", "-c", is_flag=True, default=None, help="Create a new group")
 @click.option("--delete", "-d", is_flag=True, default=None, help="Delete the group")
 @click.option("--add-member", "-m", default=None, help="Add a user (by DN or CN) to the group")
@@ -23,7 +25,7 @@ from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
 @click.option("--rename-to", default=None, help="Rename group to new CN")
 @click.option("--move-to", default=None, help="Move group to specified OU (by DN)")
 @click.option("--set-attribute", multiple=True, help="Set group attribute (format: attribute=value)")
-def groups(name, json_output, csv, all, attributes, create, delete, add_member, remove_member, 
+def groups(name, json_output, csv, all, attributes, list_groups, create, delete, add_member, remove_member, 
           add_members_from_file, remove_members_from_file, set_description, rename_to, move_to, set_attribute):
     """Comprehensive group management and membership queries.
     
@@ -37,6 +39,7 @@ def groups(name, json_output, csv, all, attributes, create, delete, add_member, 
         pyadm ldap groups jdoe                    # Show all groups for user jdoe
         pyadm ldap groups jdoe --json             # JSON output
         pyadm ldap groups jdoe --csv              # CSV output
+        pyadm ldap groups --list                  # List all groups
     
     \b
     Group Management Examples:
@@ -59,6 +62,109 @@ def groups(name, json_output, csv, all, attributes, create, delete, add_member, 
     """
     try:
         ldap_client = get_ldap_client()
+
+        def _first_value(attr_dict, key):
+            values = attr_dict.get(key)
+            if values is None:
+                for attr_key, attr_values in attr_dict.items():
+                    if attr_key.lower() == key.lower():
+                        values = attr_values
+                        break
+            if not values:
+                return None
+            if isinstance(values, list):
+                return str(values[0]) if values else None
+            return str(values)
+
+        def _stringify_attrs(attr_dict):
+            return {str(k): [str(v) for v in vals] for k, vals in attr_dict.items()}
+
+        def _member_count(attr_dict):
+            lower_attrs = {k.lower(): v for k, v in attr_dict.items()}
+            keys = ["member", "memberuid", "uniquemember"]
+            found = False
+            values = []
+            for key in keys:
+                if key in lower_attrs:
+                    found = True
+                    values.extend(lower_attrs.get(key) or [])
+            if not found:
+                return ""
+            return str(len(set(map(str, values))))
+
+        if list_groups:
+            if (create or delete or add_member or remove_member or add_members_from_file or
+                remove_members_from_file or set_description or rename_to or move_to or set_attribute):
+                raise click.ClickException("Cannot combine --list with group management options.")
+            if name:
+                raise click.ClickException("Use --list without NAME.")
+
+            allow_attribute_fallback = False
+            if all:
+                attrs = ["*"]
+            elif attributes:
+                attrs = [a.strip() for a in attributes.split(",") if a.strip()]
+            else:
+                attrs = ["cn", "description", "managedBy", "member", "memberUid", "uniqueMember"]
+                allow_attribute_fallback = True
+
+            keep_object_class = False
+            if "*" in attrs:
+                keep_object_class = True
+            else:
+                keep_object_class = any(a.lower() == "objectclass" for a in attrs)
+
+            results = ldap_client.list_groups(attrs, allow_attribute_fallback=allow_attribute_fallback)
+
+            if json_output:
+                payload = []
+                for entry in results:
+                    attrs_dict = entry.entry_attributes_as_dict
+                    if not keep_object_class:
+                        attrs_dict = {k: v for k, v in attrs_dict.items() if k.lower() != "objectclass"}
+                    payload.append({"dn": entry.entry_dn, "attributes": _stringify_attrs(attrs_dict)})
+                print(json.dumps(payload))
+                return
+
+            if csv:
+                writer = _csv.writer(sys.stdout)
+                fields = []
+                if attrs and "*" not in attrs:
+                    fields = attrs
+                elif results:
+                    fields = sorted({key for entry in results for key in entry.entry_attributes_as_dict.keys()})
+                writer.writerow(["dn"] + fields)
+                for entry in results:
+                    attrs_dict = entry.entry_attributes_as_dict
+                    if not keep_object_class:
+                        attrs_dict = {k: v for k, v in attrs_dict.items() if k.lower() != "objectclass"}
+                    row = [entry.entry_dn]
+                    for field in fields:
+                        values = attrs_dict.get(field, [])
+                        row.append(", ".join(map(str, values)))
+                    writer.writerow(row)
+                return
+
+            if not results:
+                click.echo("No groups found.")
+                return
+
+            fields = ["cn", "description", "memberCount", "managedBy"]
+            table_data = []
+            for entry in results:
+                attrs_dict = entry.entry_attributes_as_dict
+                cn = _first_value(attrs_dict, "cn") or ""
+                desc = _first_value(attrs_dict, "description") or ""
+                member_count = _member_count(attrs_dict)
+                managed_by = _first_value(attrs_dict, "managedBy") or ""
+                if not cn:
+                    cn = entry.entry_dn
+                table_data.append([cn, desc, member_count, managed_by])
+            click.echo(tabulate(table_data, headers=fields))
+            return
+
+        if not name:
+            raise click.ClickException("NAME is required unless --list is provided.")
         
         # Determine if we're managing a group or showing user's groups
         is_group_management = (create or delete or add_member or remove_member or 

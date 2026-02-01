@@ -6,6 +6,7 @@ import click
 import logging
 from tabulate import tabulate
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id
+from pyadm.pvecli.list_utils import sort_items, SortError
 
 
 @pvecli.group("vm", context_settings={'help_option_names': ['-h', '--help']})
@@ -20,7 +21,8 @@ def vm():
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", default=None, help="Comma-separated list of fields to display")
 @click.option("--include-templates", is_flag=True, help="Include VM templates in list")
-def list_vms(node, status, json_output, output, include_templates):
+@click.option("--sort", default=None, help="Sort by fields (e.g. 'name,-id')")
+def list_vms(node, status, json_output, output, include_templates, sort):
     """
     List virtual machines.
     """
@@ -50,6 +52,12 @@ def list_vms(node, status, json_output, output, include_templates):
         if status:
             vms = [vm for vm in vms if vm.get('status') == status]
             
+        if sort:
+            try:
+                vms = sort_items(vms, sort, allowed_fields={"id", "vmid", "name", "status", "node"}, field_map={"id": "vmid"})
+            except SortError as e:
+                raise click.ClickException(str(e))
+
         if json_output:
             click.echo(json.dumps(vms, indent=2))
             return
@@ -183,6 +191,37 @@ def stop_vm(vmid, node):
     except Exception as e:
         logging.error(f"Error stopping VM: {e}")
         raise click.ClickException(f"Error stopping VM: {e}")
+
+
+@vm.command("delete")
+@click.argument("vmid")
+@click.option("--node", "-n", default=None, help="Node name (not needed if VM name is unique)")
+@click.option("--purge/--no-purge", default=True, help="Purge from job configurations (default: purge)")
+@click.option("--destroy-unreferenced-disks/--keep-unreferenced-disks", default=True, help="Destroy unreferenced disks owned by guest (default: destroy)")
+def delete_vm(vmid, node, purge, destroy_unreferenced_disks):
+    """
+    Delete a VM by ID or name.
+    """
+    try:
+        client = get_pve_client()
+
+        # Resolve VM ID and node
+        vm_id, node = resolve_resource_id(client, vmid, node, "vm")
+
+        # Delete VM
+        result = client.delete_vm(node, vm_id, purge=purge, destroy_unreferenced_disks=destroy_unreferenced_disks)
+
+        # Handle both string and dictionary results
+        if isinstance(result, dict):
+            task_id = result.get('data', 'Unknown')
+        else:
+            task_id = result  # Assume result is a string containing task ID
+
+        click.echo(f"VM '{vmid}' delete initiated. Task ID: {task_id}")
+
+    except Exception as e:
+        logging.error(f"Error deleting VM: {e}")
+        raise click.ClickException(f"Error deleting VM: {e}")
 
 
 @vm.command("shutdown")
