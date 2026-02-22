@@ -19,8 +19,9 @@ def container():
 @click.option("--status", "-s", default=None, help="Filter by status (running, stopped)")
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", default=None, help="Comma-separated list of fields to display")
+@click.option("--templates", is_flag=True, help="Show only container templates")
 @click.option("--sort", default=None, help="Sort by fields (e.g. 'name,-id')")
-def list_containers(node, status, json_output, output, sort):
+def list_containers(node, status, json_output, output, templates, sort):
     """
     List containers.
     """
@@ -31,6 +32,9 @@ def list_containers(node, status, json_output, output, sort):
         # Filter by status if requested
         if status:
             containers = [c for c in containers if c.get('status') == status]
+
+        if templates:
+            containers = [c for c in containers if c.get('template', 0)]
             
         if sort:
             try:

@@ -21,8 +21,9 @@ def vm():
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", default=None, help="Comma-separated list of fields to display")
 @click.option("--include-templates", is_flag=True, help="Include VM templates in list")
+@click.option("--templates", is_flag=True, help="Show only VM templates")
 @click.option("--sort", default=None, help="Sort by fields (e.g. 'name,-id')")
-def list_vms(node, status, json_output, output, include_templates, sort):
+def list_vms(node, status, json_output, output, include_templates, templates, sort):
     """
     List virtual machines.
     """
@@ -40,11 +41,12 @@ def list_vms(node, status, json_output, output, include_templates, sort):
             if node_info.get('status') != 'online':
                 raise click.ClickException(f"Node '{node}' is offline. Cannot retrieve VMs.")
         
-        # Get VMs, either all or just regular ones
-        if include_templates:
-            vms = client.get_vms(node)
-        else:
-            vms = client.get_vms(node)
+        # Get VMs
+        vms = client.get_vms(node)
+
+        if templates:
+            vms = [vm for vm in vms if vm.get('template', 0)]
+        elif not include_templates:
             # Filter out templates (VMs with template=1)
             vms = [vm for vm in vms if not vm.get('template', 0)]
         
