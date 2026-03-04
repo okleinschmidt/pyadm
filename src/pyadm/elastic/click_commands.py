@@ -18,8 +18,8 @@ defaults = {
 }
 
 
-# Holds the selected cluster name
-selected_cluster = {"name": None}
+# Holds the selected context name
+selected_context = {"name": None}
 
 def prompt_password_if_needed(ctx, param, value):
     if value:  # `-p` was provided without an argument
@@ -28,8 +28,8 @@ def prompt_password_if_needed(ctx, param, value):
 
 # define click commands
 @click.group("elastic", context_settings={'help_option_names': ['-h', '--help']})
-@click.option("--cluster", "-c", default=None, help="Select cluster by name (section in config)")
-def elastic(cluster):
+@click.option("--context", "-c", default=None, help="Select Elastic context name")
+def elastic(context):
     """Manage Elasticsearch/OpenSearch clusters with multi-cluster support.
     
     Provides comprehensive tools for cluster management, index operations,
@@ -46,16 +46,64 @@ def elastic(cluster):
         
     \b
     Multi-cluster usage:
-        pyadm elastic -c production info           # Use production cluster
-        pyadm elastic -c staging indices          # Use staging cluster
+        pyadm elastic -c production info          # Use production context
+        pyadm elastic -c staging indices          # Use staging context
     """
-    selected_cluster["name"] = cluster
+    selected_context["name"] = context
 
 
 def get_es():
-    # Get config for selected cluster
-    cluster_cfg = cluster_config.get_cluster(selected_cluster["name"])
+    try:
+        cluster_cfg = cluster_config.get_cluster(selected_context["name"], prefix="ELASTIC")
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
     return ElasticSearch(cluster_cfg)
+
+
+@elastic.group("context", context_settings={'help_option_names': ['-h', '--help']})
+def elastic_context():
+    """Manage saved Elastic contexts."""
+    pass
+
+
+@elastic_context.command("list")
+def list_contexts():
+    """List available Elastic contexts."""
+    try:
+        contexts = cluster_config.list_contexts(prefix="ELASTIC")
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not contexts:
+        click.echo("No Elastic contexts found.")
+        return
+
+    active = cluster_config.get_active_context(prefix="ELASTIC")
+    rows = []
+    for entry in contexts:
+        marker = "*" if active and entry["name"].lower() == active.lower() else ""
+        rows.append([marker, entry["name"], entry["section"]])
+    click.echo(tabulate(rows, headers=["ACTIVE", "CONTEXT", "CONFIG SECTION"], tablefmt="plain"))
+
+
+@elastic_context.command("current")
+def current_context():
+    """Show the currently active Elastic context."""
+    try:
+        resolved = cluster_config.resolve_context(prefix="ELASTIC")
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"{resolved['name']} (section: {resolved['section']})")
+
+
+@elastic_context.command("use")
+@click.argument("context_name")
+def use_context(context_name):
+    """Switch active Elastic context."""
+    try:
+        selected = cluster_config.set_active_context(prefix="ELASTIC", name=context_name)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Active Elastic context set to: {selected}")
 
 # show information about a user
 # show information about a user
@@ -315,4 +363,3 @@ def delete(index, force):
         raise e
     except Exception as e:
         raise click.ClickException(f"An error occurred: {e}")
-

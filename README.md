@@ -94,7 +94,7 @@ The LDAP module provides comprehensive Active Directory and LDAP server manageme
 
 ### Key Features
 - **Smart Authentication**: Automatic DN format conversion for email-style usernames
-- **Multi-Server Support**: Switch between different LDAP servers using `--server/-s`
+- **Multi-Server Support**: Switch between different LDAP contexts using `--context/-c`
 - **Comprehensive User Management**: Password management, account status, group membership
 - **Group Operations**: Create, delete, modify groups and memberships
 - **Flexible Output**: JSON, CSV, and formatted text output options
@@ -177,9 +177,13 @@ pyadm ldap group-exists "TeamLead"
 ### Multi-Server Usage
 
 ```shell
-# Use specific LDAP server
-pyadm ldap --server LDAP_PROD user jdoe
-pyadm ldap --server LDAP_STAGING groups "Developers"
+# Switch LDAP context (persistent)
+pyadm ldap context list
+pyadm ldap context use corp
+pyadm ldap context current
+
+# Override context only for one call
+pyadm ldap --context staging groups "Developers"
 ```
 
 ## Elastic Module
@@ -194,10 +198,13 @@ The Elastic module allows you to interact with Elasticsearch or OpenSearch clust
 - **Data Operations**: Reindexing, aliasing, and data migration tools
 
 ### Multi-cluster Support
-The Elastic module supports multiple clusters via configuration sections. Use the `--cluster/-c` option to specify which cluster to use:
+The Elastic module supports named contexts. Use `context use` for persistent switching, or `--context/-c` for one-off overrides.
 
 ```shell
-pyadm elastic --cluster ELASTIC_PROD info
+pyadm elastic context list
+pyadm elastic context use prod
+pyadm elastic context current
+pyadm elastic --context ops info
 ```
 
 ### Examples
@@ -256,10 +263,13 @@ The Proxmox VE module provides comprehensive management of Proxmox Virtual Envir
 - **Resource Management**: Storage, network, and node configuration management
 
 ### Multi-cluster Support
-The PVE module supports multiple clusters via configuration sections. Use the `--server/-s` option to specify which server to use:
+The PVE module supports named contexts. Use `context use` for persistent switching, or `--context/-c` for one-off overrides.
 
 ```shell
-pyadm pve --server PVE_PROD vm list
+pyadm pve context list
+pyadm pve context use homelab
+pyadm pve context current
+pyadm pve --context prod vm list
 ```
 
 ### Offline Mode
@@ -392,64 +402,63 @@ pyadm config validate
 
 ### Configuration File Format
 
-The configuration uses standard INI format with sections for different environments and services.
+The configuration uses INI format with named contexts per module and an active selection in `[CONTEXT]`.
 
 ### Example Configuration
 
 ```ini
-# Default LDAP server
-[LDAP]
+# Active context per module
+[CONTEXT]
+elastic = prod
+ldap = corp
+pve = homelab
+
+[LDAP_CONTEXT_corp]
+name = corp
 server = ldaps://dc.example.org
 base_dn = dc=example,dc=org
 bind_username = cn=admin,dc=example,dc=org
 bind_password = s3cr3t-p455w0rd!
-use_ssl = true
+use_starttls = false
 skip_tls_verify = false
 
-# Production LDAP server
-[LDAP_PROD]
-server = ldaps://dc-prod.example.org
+[LDAP_CONTEXT_staging]
+name = staging
+server = ldaps://dc-staging.example.org
 base_dn = dc=example,dc=org
-bind_username = cn=admin,dc=example,dc=org
-bind_password = prod-p455w0rd!
-use_ssl = true
-
-# Development LDAP server
-[LDAP_DEV]
-server = ldap://dc-dev.example.org
-base_dn = dc=dev,dc=example,dc=org
-bind_username = cn=admin,dc=dev,dc=example,dc=org
-bind_password = dev-p455w0rd!
-use_starttls = true
+bind_username = cn=readonly,dc=example,dc=org
+bind_password = staging-secret
+use_starttls = false
 skip_tls_verify = true
 
-# Default Elasticsearch cluster
-[ELASTIC]
+[ELASTIC_CONTEXT_prod]
+name = prod
 url = https://elasticsearch.example.org:9200
 username = elastic
 password = changeme
-verify_certs = true
+engine = elasticsearch
+skip_tls_verify = false
 
-# Production Elasticsearch cluster
-[ELASTIC_PROD]
-url = https://es-prod.example.org:9200
-username = elastic
-password = prod-changeme
-verify_certs = true
+[ELASTIC_CONTEXT_ops]
+name = ops
+url = https://es-ops.example.org:9200
+username = elastic_ro
+password = ops-secret
+engine = opensearch
+skip_tls_verify = true
 
-# Default Proxmox server
-[PVE]
+[PVE_CONTEXT_homelab]
+name = homelab
 host = pve.example.org
-username = root@pam
+user = root@pam
 password = s3cr3t-p455w0rd!
 verify_ssl = true
 
-# Production Proxmox cluster
-[PVE_PROD]
+[PVE_CONTEXT_prod]
+name = prod
 host = pve-prod.example.org
-username = automation@pve
-# Token-based authentication (recommended for production)
-token_name = automation@pve!api-token
+user = automation@pve
+token_name = pyadm
 token_value = secret-token-value
 verify_ssl = true
 ```
@@ -469,11 +478,12 @@ verify_ssl = true
 - `url` - Elasticsearch cluster URL
 - `username` - Username for authentication
 - `password` - Password for authentication
-- `verify_certs` - Verify SSL certificates (true/false)
+- `engine` - `elasticsearch` or `opensearch` (optional)
+- `skip_tls_verify` - Skip TLS certificate verification (true/false)
 
 **Proxmox Settings:**
 - `host` - Proxmox server hostname or IP
-- `username` - Username for authentication
+- `user` - Username for authentication
 - `password` - Password for authentication (if not using tokens)
 - `token_name` - API token name (format: user@realm!tokenname)
 - `token_value` - API token value
@@ -481,18 +491,21 @@ verify_ssl = true
 
 ### Multi-Environment Usage
 
-You can specify different sections in the configuration file to manage multiple environments:
+Use context commands to switch persistently, or per-command overrides:
 
 ```shell
-# Use production LDAP server
-pyadm ldap --server LDAP_PROD user jdoe
+# Switch context persistently
+pyadm ldap context use corp
+pyadm elastic context use prod
+pyadm pve context use homelab
 
-# Use staging Elasticsearch cluster
-pyadm elastic --cluster ELASTIC_STAGING indices
-
-# Use production Proxmox cluster
-pyadm pve --server PVE_PROD vm list
+# Override only this command
+pyadm ldap --context staging user jdoe
+pyadm elastic --context ops indices
+pyadm pve --context prod vm list
 ```
+
+Legacy section names (`[LDAP]`, `[LDAP_PROD]`, `[ELASTIC]`, `[ELASTIC_PROD]`, `[PVE]`, `[PVE_PROD]`) are still supported.
 
 ## Troubleshooting
 

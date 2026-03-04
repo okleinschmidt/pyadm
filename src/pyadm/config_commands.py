@@ -92,8 +92,17 @@ def generate_config(output):
     example_config = """
 # pyadm configuration example
 
-# Example LDAP configuration - Default section
-[LDAP]
+# Active context per module (used when --context is not set)
+[CONTEXT]
+elastic = prod
+ldap = corp
+pve = homelab
+
+# ---------------------------
+# LDAP contexts
+# ---------------------------
+[LDAP_CONTEXT_corp]
+name = corp
 server = ldap://ldap.example.org:389
 base_dn = dc=example,dc=org
 bind_username = cn=admin,dc=example,dc=org
@@ -102,8 +111,8 @@ skip_tls_verify = false
 use_starttls = false
 timeout = 10
 
-# Example LDAP configuration - Production environment
-[LDAP_PROD]
+[LDAP_CONTEXT_staging]
+name = staging
 server = ldaps://ldap-prod.example.org:636
 base_dn = dc=example,dc=org
 bind_username = cn=readonly,dc=example,dc=org
@@ -112,39 +121,49 @@ skip_tls_verify = true
 use_starttls = false
 timeout = 30
 
-# Example Elastic configuration - Default section
-[ELASTIC]
-hosts = https://elastic.example.org:9200
+# ---------------------------
+# Elastic contexts
+# ---------------------------
+[ELASTIC_CONTEXT_prod]
+name = prod
+url = https://elastic.example.org:9200
 username = elastic
 password = secret
-verify_certs = true
-ca_certs = /path/to/ca.crt
-timeout = 30
+engine = elasticsearch
+skip_tls_verify = false
 
-# Example Elastic configuration - Production environment
-[ELASTIC_PROD]
-hosts = https://elastic-prod.example.org:9200,https://elastic-prod-2.example.org:9200
+[ELASTIC_CONTEXT_ops]
+name = ops
+url = https://elastic-ops.example.org:9200
 username = elastic_ro
 password = secret
-verify_certs = false
-timeout = 60
+engine = opensearch
+skip_tls_verify = true
 
-# Example PVE configuration - Default section
-[PVE]
+# ---------------------------
+# PVE contexts
+# ---------------------------
+[PVE_CONTEXT_homelab]
+name = homelab
 host = pve.example.org
 port = 8006
 user = root@pam
 password = secret
 verify_ssl = true
 
-# Example PVE configuration with API token
-[PVE_PROD]
+[PVE_CONTEXT_prod]
+name = prod
 host = pve-prod.example.org
 port = 8006
 user = api@pam
 token_name = pyadm
 token_value = xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 verify_ssl = false
+
+# Backward compatibility:
+# Existing sections like [LDAP], [LDAP_PROD], [ELASTIC], [ELASTIC_PROD], [PVE], [PVE_PROD]
+# continue to work and can also be selected via:
+# pyadm <module> context use <name-or-section>
 """
 
     if output:
@@ -234,7 +253,7 @@ def get_config_value(key_path):
             raise ValueError("Key path must be in format section.key")
         
         section, key = key_path.split(".", 1)
-        cfg = cluster_config.get_cluster(section)
+        cfg = cluster_config.get_section(section)
         
         if key in cfg:
             click.echo(f"{key_path} = {cfg[key]}")

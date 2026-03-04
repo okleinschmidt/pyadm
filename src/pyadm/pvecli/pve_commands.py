@@ -2,25 +2,26 @@ import click
 import logging
 import os.path
 from typing import Optional
+from tabulate import tabulate
 from pyadm.config import cluster_config
 from pyadm.pvecli.pve import PVEClient
 
-# Holds the selected PVE server name
-selected_pve = {"name": None, "debug": False, "dry_run": False, "offline": False}
+# Holds the selected PVE context name
+selected_pve = {"context": None, "debug": False, "dry_run": False, "offline": False}
 
 
 @click.group("pve", context_settings={'help_option_names': ['-h', '--help']})
-@click.option("--server", "-s", default=None, help="Select Proxmox VE server by name (section in config)")
+@click.option("--context", "-c", default=None, help="Select PVE context name")
 @click.option("--debug", "-d", is_flag=True, help="Enable debug output for API calls")
 @click.option("--dry-run", is_flag=True, help="Show what would be done without connecting")
 @click.option("--offline", is_flag=True, help="Work in offline mode with sample data")
-def pvecli(server, debug, dry_run, offline):
+def pvecli(context, debug, dry_run, offline):
     """Manage Proxmox Virtual Environment clusters.
     
-    Use --server/-s to select a config section (e.g. [PVE], [PVE_PROD], ...).
+    Use --context/-c to select a context name.
     Use --offline to work with sample data when no server is available.
     """
-    selected_pve["name"] = server
+    selected_pve["context"] = context
     selected_pve["debug"] = debug
     selected_pve["dry_run"] = dry_run
     selected_pve["offline"] = offline
@@ -50,7 +51,7 @@ def get_pve_client() -> Optional[PVEClient]:
         )
     
     try:
-        cfg = cluster_config.get_cluster(selected_pve["name"], prefix="PVE")
+        cfg = cluster_config.get_cluster(selected_pve["context"], prefix="PVE")
         
         # Check for required config values
         required_keys = ['host']
@@ -64,9 +65,9 @@ def get_pve_client() -> Optional[PVEClient]:
         
         missing = [k for k in required_keys if k not in cfg]
         if missing:
-            section = selected_pve["name"] or "PVE"
+            section = selected_pve["context"] or "PVE"
             raise click.ClickException(
-                f"Missing required configuration in [{section}] section: {', '.join(missing)}\n"
+                f"Missing required configuration for context '{section}': {', '.join(missing)}\n"
                 f"Please edit your configuration with 'pyadm config edit'"
                 f"\n\nYou can also use --offline mode to work with sample data."
             )
@@ -76,11 +77,14 @@ def get_pve_client() -> Optional[PVEClient]:
             
         return PVEClient(cfg, debug=selected_pve["debug"])
     except Exception as e:
+        if isinstance(e, RuntimeError):
+            raise click.ClickException(str(e)) from e
+
         if "No section" in str(e):
-            section = selected_pve["name"] or "PVE"
+            section = selected_pve["context"] or "PVE"
             raise click.ClickException(
-                f"Configuration section [{section}] not found.\n"
-                f"Add it to your config with 'pyadm config edit' or specify a different section with --server"
+                f"PVE context '{section}' not found.\n"
+                f"Add it to your config with 'pyadm config edit' or specify a different context with --context"
                 f"\n\nYou can also use --offline mode to work with sample data."
             )
         
@@ -155,6 +159,53 @@ def resolve_resource_id(client, resource_id, node=None, resource_type="vm"):
             )
             
         return resource['vmid'], resource['node']
+
+
+@pvecli.group("context", context_settings={'help_option_names': ['-h', '--help']})
+def pve_context():
+    """Manage saved PVE contexts."""
+    pass
+
+
+@pve_context.command("list")
+def list_contexts():
+    """List available PVE contexts."""
+    try:
+        contexts = cluster_config.list_contexts(prefix="PVE")
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not contexts:
+        click.echo("No PVE contexts found.")
+        return
+
+    active = cluster_config.get_active_context(prefix="PVE")
+    rows = []
+    for entry in contexts:
+        marker = "*" if active and entry["name"].lower() == active.lower() else ""
+        rows.append([marker, entry["name"], entry["section"]])
+    click.echo(tabulate(rows, headers=["ACTIVE", "CONTEXT", "CONFIG SECTION"], tablefmt="plain"))
+
+
+@pve_context.command("current")
+def current_context():
+    """Show the currently active PVE context."""
+    try:
+        resolved = cluster_config.resolve_context(prefix="PVE")
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"{resolved['name']} (section: {resolved['section']})")
+
+
+@pve_context.command("use")
+@click.argument("context_name")
+def use_context(context_name):
+    """Switch active PVE context."""
+    try:
+        selected = cluster_config.set_active_context(prefix="PVE", name=context_name)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Active PVE context set to: {selected}")
+
 
 # Import commands from separate files to register with Click
 from pyadm.pvecli.vm_commands import *

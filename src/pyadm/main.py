@@ -1,16 +1,72 @@
+import importlib
 import click
 import logging
-
-from pyadm.ldapcli.click_commands import ldapcli
-from pyadm.elastic.click_commands import elastic
-from pyadm.pvecli import pvecli
-from pyadm.config_commands import config_cli
 
 # Default logging level - will be changed if --debug is passed
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s:%(name)s:%(message)s')
 
 
-@click.group(context_settings={'help_option_names': ['-h', '--help']})
+def _build_unavailable_command(command_name, error):
+    @click.command(
+        name=command_name,
+        context_settings={
+            'help_option_names': ['-h', '--help'],
+            'ignore_unknown_options': True,
+            'allow_extra_args': True,
+        },
+    )
+    @click.pass_context
+    def unavailable_command(ctx):
+        hint = ""
+        if "_ctypes" in str(error):
+            hint = " Python runtime is missing '_ctypes' (usually missing libffi during Python build)."
+        raise click.ClickException(
+            f"Module '{command_name}' is unavailable: {error}.{hint}"
+        )
+
+    return unavailable_command
+
+
+class LazyGroup(click.Group):
+    def __init__(self, *args, lazy_subcommands=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lazy_subcommands = lazy_subcommands or {}
+
+    def list_commands(self, ctx):
+        commands = set(super().list_commands(ctx))
+        commands.update(self.lazy_subcommands.keys())
+        return sorted(commands)
+
+    def get_command(self, ctx, cmd_name):
+        command = super().get_command(ctx, cmd_name)
+        if command is not None:
+            return command
+
+        target = self.lazy_subcommands.get(cmd_name)
+        if not target:
+            return None
+
+        module_name, attribute_name = target.split(":", 1)
+        try:
+            module = importlib.import_module(module_name)
+            command = getattr(module, attribute_name)
+        except Exception as exc:
+            return _build_unavailable_command(cmd_name, exc)
+
+        self.add_command(command, cmd_name)
+        return command
+
+
+@click.group(
+    cls=LazyGroup,
+    lazy_subcommands={
+        "config": "pyadm.config_commands:config_cli",
+        "elastic": "pyadm.elastic.click_commands:elastic",
+        "ldap": "pyadm.ldapcli.click_commands:ldapcli",
+        "pve": "pyadm.pvecli.pve_commands:pvecli",
+    },
+    context_settings={'help_option_names': ['-h', '--help']},
+)
 @click.option('--debug', is_flag=True, help='Enable debug logging')
 def cli(debug):
     """pyadm - Swiss Army Knife for Engineers and Administrators
@@ -247,7 +303,7 @@ complete -c pyadm -f -n '__fish_seen_subcommand_from pve; and __fish_seen_subcom
 complete -c pyadm -f -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish' -d 'Shell type'
 
 # Common options
-complete -c pyadm -f -n '__fish_seen_subcommand_from pve' -s s -l server -d 'Select Proxmox VE server'
+complete -c pyadm -f -n '__fish_seen_subcommand_from pve' -s c -l context -d 'Select PVE context'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve' -s d -l debug -d 'Enable debug output'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve' -l dry-run -d 'Show what would be done'
 complete -c pyadm -f -n '__fish_seen_subcommand_from pve' -l offline -d 'Work in offline mode'
@@ -259,13 +315,9 @@ complete -c pyadm -f -n '__fish_seen_subcommand_from pve' -s o -l output -d 'Com
     click.echo(completion_script.strip())
 
 
-# Register the config command group
-cli.add_command(config_cli)
-cli.add_command(ldapcli)
-cli.add_command(elastic)
+# Register built-in commands
 cli.add_command(version)
 cli.add_command(completion)
-cli.add_command(pvecli)
 
 
 

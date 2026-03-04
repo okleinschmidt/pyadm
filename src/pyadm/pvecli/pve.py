@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 from typing import Dict, List, Optional, Any, Union
 from proxmoxer import ProxmoxAPI
 import requests
@@ -20,6 +21,7 @@ class PVEClient:
         self.config = config
         self.debug = debug
         self._api = None
+        self._nodes = None
         self._online_nodes = None
     
     @property
@@ -79,7 +81,7 @@ class PVEClient:
             params['destroy-unreferenced-disks'] = 1
         return params
     
-    def get_nodes(self) -> List[Dict[str, Any]]:
+    def get_nodes(self, refresh: bool = False) -> List[Dict[str, Any]]:
         """
         Get list of all nodes.
         
@@ -87,21 +89,27 @@ class PVEClient:
             List of node dictionaries
         """
         try:
-            return self.api.nodes.get()
+            if refresh or self._nodes is None:
+                start = time.perf_counter()
+                self._nodes = self.api.nodes.get()
+                if self.debug:
+                    elapsed_ms = (time.perf_counter() - start) * 1000
+                    self.logger.debug(f"Fetched node list in {elapsed_ms:.2f} ms")
+            return self._nodes
         except Exception as e:
             self.logger.error(f"Error getting nodes: {e}")
             raise
     
-    def get_online_nodes(self) -> List[str]:
+    def get_online_nodes(self, refresh: bool = False) -> List[str]:
         """
         Get list of nodes that are currently online.
         
         Returns:
             List of online node names
         """
-        if self._online_nodes is None:
+        if refresh or self._online_nodes is None:
             try:
-                nodes = self.get_nodes()
+                nodes = self.get_nodes(refresh=refresh)
                 self._online_nodes = [node['node'] for node in nodes if node.get('status') == 'online']
                 if self.debug:
                     self.logger.debug(f"Online nodes: {', '.join(self._online_nodes)}")
@@ -157,7 +165,11 @@ class PVEClient:
                     
                 # Get VMs from the specific node
                 try:
+                    start = time.perf_counter()
                     node_vms = self.api.nodes(node).qemu.get()
+                    if self.debug:
+                        elapsed_ms = (time.perf_counter() - start) * 1000
+                        self.logger.debug(f"Fetched VMs from node '{node}' in {elapsed_ms:.2f} ms")
                     
                     # Add node information to each VM
                     for vm in node_vms:
@@ -171,7 +183,11 @@ class PVEClient:
                 online_nodes = self.get_online_nodes()
                 for node_name in online_nodes:
                     try:
+                        start = time.perf_counter()
                         node_vms = self.api.nodes(node_name).qemu.get()
+                        if self.debug:
+                            elapsed_ms = (time.perf_counter() - start) * 1000
+                            self.logger.debug(f"Fetched VMs from node '{node_name}' in {elapsed_ms:.2f} ms")
                         
                         # Add node information to each VM
                         for vm in node_vms:
@@ -219,7 +235,11 @@ class PVEClient:
                 
                 # Get containers from the specific node
                 try:
+                    start = time.perf_counter()
                     node_containers = self.api.nodes(node).lxc.get()
+                    if self.debug:
+                        elapsed_ms = (time.perf_counter() - start) * 1000
+                        self.logger.debug(f"Fetched containers from node '{node}' in {elapsed_ms:.2f} ms")
                     
                     # Add node information to each container
                     for container in node_containers:
@@ -233,7 +253,11 @@ class PVEClient:
                 online_nodes = self.get_online_nodes()
                 for node_name in online_nodes:
                     try:
+                        start = time.perf_counter()
                         node_containers = self.api.nodes(node_name).lxc.get()
+                        if self.debug:
+                            elapsed_ms = (time.perf_counter() - start) * 1000
+                            self.logger.debug(f"Fetched containers from node '{node_name}' in {elapsed_ms:.2f} ms")
                         
                         # Add node information to each container
                         for container in node_containers:
