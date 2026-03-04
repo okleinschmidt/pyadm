@@ -5,6 +5,7 @@ import logging
 import csv as _csv
 from tabulate import tabulate
 from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
+from pyadm.ldapcli.ldap_utils import first_value, stringify_attrs, resolve_user_dn
 
 
 # Show groups a user belongs to
@@ -63,22 +64,6 @@ def groups(name, json_output, csv, all, attributes, list_groups, create, delete,
     try:
         ldap_client = get_ldap_client()
 
-        def _first_value(attr_dict, key):
-            values = attr_dict.get(key)
-            if values is None:
-                for attr_key, attr_values in attr_dict.items():
-                    if attr_key.lower() == key.lower():
-                        values = attr_values
-                        break
-            if not values:
-                return None
-            if isinstance(values, list):
-                return str(values[0]) if values else None
-            return str(values)
-
-        def _stringify_attrs(attr_dict):
-            return {str(k): [str(v) for v in vals] for k, vals in attr_dict.items()}
-
         def _member_count(attr_dict):
             lower_attrs = {k.lower(): v for k, v in attr_dict.items()}
             keys = ["member", "memberuid", "uniquemember"]
@@ -122,7 +107,7 @@ def groups(name, json_output, csv, all, attributes, list_groups, create, delete,
                     attrs_dict = entry.entry_attributes_as_dict
                     if not keep_object_class:
                         attrs_dict = {k: v for k, v in attrs_dict.items() if k.lower() != "objectclass"}
-                    payload.append({"dn": entry.entry_dn, "attributes": _stringify_attrs(attrs_dict)})
+                    payload.append({"dn": entry.entry_dn, "attributes": stringify_attrs(attrs_dict)})
                 print(json.dumps(payload))
                 return
 
@@ -153,10 +138,10 @@ def groups(name, json_output, csv, all, attributes, list_groups, create, delete,
             table_data = []
             for entry in results:
                 attrs_dict = entry.entry_attributes_as_dict
-                cn = _first_value(attrs_dict, "cn") or ""
-                desc = _first_value(attrs_dict, "description") or ""
+                cn = first_value(attrs_dict, "cn") or ""
+                desc = first_value(attrs_dict, "description") or ""
                 member_count = _member_count(attrs_dict)
-                managed_by = _first_value(attrs_dict, "managedBy") or ""
+                managed_by = first_value(attrs_dict, "managedBy") or ""
                 if not cn:
                     cn = entry.entry_dn
                 table_data.append([cn, desc, member_count, managed_by])
@@ -229,15 +214,9 @@ def groups(name, json_output, csv, all, attributes, list_groups, create, delete,
                 
             # Handle add member
             if add_member:
-                # Check if user_dn is a DN or CN/UID/Mail
-                if "dc=" in add_member.lower():
-                    user_dn = add_member
-                else:
-                    # It's a CN/UID/Mail, get the DN
-                    user_result = ldap_client.get_user(add_member)
-                    if not user_result:
-                        raise click.ClickException(f"No user found with identifier '{add_member}'.")
-                    user_dn = user_result[0].entry_dn
+                user_dn = resolve_user_dn(ldap_client, add_member)
+                if not user_dn:
+                    raise click.ClickException(f"No user found with identifier '{add_member}'.")
                     
                 success = ldap_client.add_user_to_group(user_dn, group_dn)
                 if success:
@@ -248,15 +227,9 @@ def groups(name, json_output, csv, all, attributes, list_groups, create, delete,
                 
             # Handle remove member
             if remove_member:
-                # Check if user_dn is a DN or CN/UID/Mail
-                if "dc=" in remove_member.lower():
-                    user_dn = remove_member
-                else:
-                    # It's a CN/UID/Mail, get the DN
-                    user_result = ldap_client.get_user(remove_member)
-                    if not user_result:
-                        raise click.ClickException(f"No user found with identifier '{remove_member}'.")
-                    user_dn = user_result[0].entry_dn
+                user_dn = resolve_user_dn(ldap_client, remove_member)
+                if not user_dn:
+                    raise click.ClickException(f"No user found with identifier '{remove_member}'.")
                     
                 success = ldap_client.remove_user_from_group(user_dn, group_dn)
                 if success:
@@ -273,17 +246,10 @@ def groups(name, json_output, csv, all, attributes, list_groups, create, delete,
                         
                     success_count = 0
                     for member in members:
-                        # Check if member is a DN or CN/UID/Mail
-                        if "dc=" in member.lower():
-                            user_dn = member
-                        else:
-                            # It's a CN/UID/Mail, get the DN
-                            user_result = ldap_client.get_user(member)
-                            if not user_result:
-                                click.echo(f"Warning: No user found with identifier '{member}'. Skipping.")
-                                continue
-                            user_dn = user_result[0].entry_dn
-                            
+                        user_dn = resolve_user_dn(ldap_client, member)
+                        if not user_dn:
+                            click.echo(f"Warning: No user found with identifier '{member}'. Skipping.")
+                            continue
                         success = ldap_client.add_user_to_group(user_dn, group_dn)
                         if success:
                             success_count += 1
@@ -307,17 +273,10 @@ def groups(name, json_output, csv, all, attributes, list_groups, create, delete,
                         
                     success_count = 0
                     for member in members:
-                        # Check if member is a DN or CN/UID/Mail
-                        if "dc=" in member.lower():
-                            user_dn = member
-                        else:
-                            # It's a CN/UID/Mail, get the DN
-                            user_result = ldap_client.get_user(member)
-                            if not user_result:
-                                click.echo(f"Warning: No user found with identifier '{member}'. Skipping.")
-                                continue
-                            user_dn = user_result[0].entry_dn
-                            
+                        user_dn = resolve_user_dn(ldap_client, member)
+                        if not user_dn:
+                            click.echo(f"Warning: No user found with identifier '{member}'. Skipping.")
+                            continue
                         success = ldap_client.remove_user_from_group(user_dn, group_dn)
                         if success:
                             success_count += 1

@@ -4,8 +4,8 @@ import sys
 import os
 import logging
 from tabulate import tabulate
-from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id
-from pyadm.pvecli.list_utils import sort_items, SortError
+from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id, get_task_id
+from pyadm.pvecli.list_utils import sort_items, SortError, render_resource_table
 
 
 @pvecli.group("ct", context_settings={'help_option_names': ['-h', '--help']})
@@ -45,30 +45,9 @@ def list_containers(node, status, json_output, output, templates, sort):
         if json_output:
             click.echo(json.dumps(containers, indent=2))
             return
-        
-        # Determine fields to display
-        fields = ['vmid', 'name', 'status', 'node', 'maxmem']
-        if output:
-            fields = output.split(',')
-        
-        # Create table data
-        table_data = []
-        for container in containers:
-            row = []
-            for field in fields:
-                if field in container:
-                    if field == 'maxmem' and isinstance(container[field], int):
-                        # Convert bytes to MB for memory
-                        row.append(f"{container[field] / (1024**2):.0f} MB")
-                    else:
-                        row.append(container[field])
-                else:
-                    row.append("")
-            table_data.append(row)
-        
-        # Print table
-        click.echo(tabulate(table_data, headers=fields))
-        
+
+        click.echo(render_resource_table(containers, ['vmid', 'name', 'status', 'node', 'maxmem'], output=output, mem_unit="MB"))
+
     except Exception as e:
         logging.error(f"Error listing containers: {e}")
         raise click.ClickException(f"Error listing containers: {e}")
@@ -129,14 +108,7 @@ def start_container(ctid, node):
                 
         # Start container
         result = client.start_container(node, ct_id)
-        
-        # Handle both string and dictionary results
-        if isinstance(result, dict):
-            task_id = result.get('data', 'Unknown')
-        else:
-            task_id = result  # Assume result is a string containing task ID
-            
-        click.echo(f"Container '{ctid}' start initiated. Task ID: {task_id}")
+        click.echo(f"Container '{ctid}' start initiated. Task ID: {get_task_id(result)}")
                 
     except Exception as e:
         logging.error(f"Error starting container: {e}")
@@ -158,14 +130,7 @@ def stop_container(vmid, node):
             
         # Stop container
         result = client.stop_container(node, ct_id)
-        
-        # Handle both string and dictionary results
-        if isinstance(result, dict):
-            task_id = result.get('data', 'Unknown')
-        else:
-            task_id = result  # Assume result is a string containing task ID
-            
-        click.echo(f"Container '{vmid}' stop initiated. Task ID: {task_id}")
+        click.echo(f"Container '{vmid}' stop initiated. Task ID: {get_task_id(result)}")
                 
     except Exception as e:
         logging.error(f"Error stopping container: {e}")
@@ -189,14 +154,7 @@ def delete_container(vmid, node, purge, destroy_unreferenced_disks):
 
         # Delete container
         result = client.delete_container(node, ct_id, purge=purge, destroy_unreferenced_disks=destroy_unreferenced_disks)
-
-        # Handle both string and dictionary results
-        if isinstance(result, dict):
-            task_id = result.get('data', 'Unknown')
-        else:
-            task_id = result  # Assume result is a string containing task ID
-
-        click.echo(f"Container '{vmid}' delete initiated. Task ID: {task_id}")
+        click.echo(f"Container '{vmid}' delete initiated. Task ID: {get_task_id(result)}")
 
     except Exception as e:
         logging.error(f"Error deleting container: {e}")
@@ -388,15 +346,8 @@ def migrate_container(ctid, target, node, online, restart):
             
         # Perform migration
         result = client.migrate_container(source_node, ct_id, **options)
-        
-        # Handle both string and dictionary results
-        if isinstance(result, dict):
-            task_id = result.get('data', 'Unknown')
-        else:
-            task_id = result
-            
         migration_type = "online" if online else "offline"
-        click.echo(f"Container '{ctid}' {migration_type} migration from '{source_node}' to '{target}' initiated. Task ID: {task_id}")
+        click.echo(f"Container '{ctid}' {migration_type} migration from '{source_node}' to '{target}' initiated. Task ID: {get_task_id(result)}")
                 
     except Exception as e:
         logging.error(f"Error migrating container: {e}")
@@ -499,14 +450,7 @@ def config_container(ctid, node, set_configs, delete_configs, show, json_output)
         if config_updates:
             # Apply configuration changes
             result = client.set_container_config(ct_node, ct_id, config_updates)
-            
-            # Handle both string and dictionary results
-            if isinstance(result, dict):
-                task_id = result.get('data', 'Unknown')
-            else:
-                task_id = result
-            
-            click.echo(f"Container '{ctid}' configuration updated. Task ID: {task_id}")
+            click.echo(f"Container '{ctid}' configuration updated. Task ID: {get_task_id(result)}")
             
             # Show what was changed
             for key, value in config_updates.items():

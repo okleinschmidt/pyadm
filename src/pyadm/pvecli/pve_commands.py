@@ -2,8 +2,8 @@ import click
 import logging
 import os.path
 from typing import Optional
-from tabulate import tabulate
 from pyadm.config import cluster_config
+from pyadm.context_utils import register_context_commands
 from pyadm.pvecli.pve import PVEClient
 
 # Holds the selected PVE context name
@@ -167,44 +167,14 @@ def pve_context():
     pass
 
 
-@pve_context.command("list")
-def list_contexts():
-    """List available PVE contexts."""
-    try:
-        contexts = cluster_config.list_contexts(prefix="PVE")
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
-    if not contexts:
-        click.echo("No PVE contexts found.")
-        return
-
-    active = cluster_config.get_active_context(prefix="PVE")
-    rows = []
-    for entry in contexts:
-        marker = "*" if active and entry["name"].lower() == active.lower() else ""
-        rows.append([marker, entry["name"], entry["section"]])
-    click.echo(tabulate(rows, headers=["ACTIVE", "CONTEXT", "CONFIG SECTION"], tablefmt="plain"))
+register_context_commands(pve_context, "PVE", "PVE")
 
 
-@pve_context.command("current")
-def current_context():
-    """Show the currently active PVE context."""
-    try:
-        resolved = cluster_config.resolve_context(prefix="PVE")
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
-    click.echo(f"{resolved['name']} (section: {resolved['section']})")
-
-
-@pve_context.command("use")
-@click.argument("context_name")
-def use_context(context_name):
-    """Switch active PVE context."""
-    try:
-        selected = cluster_config.set_active_context(prefix="PVE", name=context_name)
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
-    click.echo(f"Active PVE context set to: {selected}")
+def get_task_id(result) -> str:
+    """Extract task ID from a PVE API result (dict or string)."""
+    if isinstance(result, dict):
+        return result.get('data', 'Unknown')
+    return result
 
 
 # Import commands from separate files to register with Click

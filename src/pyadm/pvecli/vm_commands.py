@@ -1,12 +1,8 @@
 import json
 import click
 import logging
-import json
-import click
-import logging
-from tabulate import tabulate
-from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id
-from pyadm.pvecli.list_utils import sort_items, SortError
+from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id, get_task_id
+from pyadm.pvecli.list_utils import sort_items, SortError, render_resource_table
 
 
 @pvecli.group("vm", context_settings={'help_option_names': ['-h', '--help']})
@@ -63,30 +59,9 @@ def list_vms(node, status, json_output, output, include_templates, templates, so
         if json_output:
             click.echo(json.dumps(vms, indent=2))
             return
-        
-        # Determine fields to display
-        fields = ['vmid', 'name', 'status', 'node', 'cpu', 'maxmem']
-        if output:
-            fields = output.split(',')
-        
-        # Create table data
-        table_data = []
-        for vm in vms:
-            row = []
-            for field in fields:
-                if field in vm:
-                    if field == 'maxmem' and isinstance(vm[field], int):
-                        # Convert bytes to GB for memory
-                        row.append(f"{vm[field] / (1024**3):.2f} GB")
-                    else:
-                        row.append(vm[field])
-                else:
-                    row.append("")
-            table_data.append(row)
-        
-        # Print table
-        click.echo(tabulate(table_data, headers=fields))
-        
+
+        click.echo(render_resource_table(vms, ['vmid', 'name', 'status', 'node', 'cpu', 'maxmem'], output=output))
+
     except Exception as e:
         logging.error(f"Error listing VMs: {e}")
         raise click.ClickException(f"Error listing VMs: {e}")
@@ -152,14 +127,7 @@ def start_vm(vmid, node):
                 
         # Start VM
         result = client.start_vm(node, vm_id)
-        
-        # Handle both string and dictionary results
-        if isinstance(result, dict):
-            task_id = result.get('data', 'Unknown')
-        else:
-            task_id = result  # Assume result is a string containing task ID
-            
-        click.echo(f"VM '{vmid}' start initiated. Task ID: {task_id}")
+        click.echo(f"VM '{vmid}' start initiated. Task ID: {get_task_id(result)}")
                 
     except Exception as e:
         logging.error(f"Error starting VM: {e}")
@@ -181,14 +149,7 @@ def stop_vm(vmid, node):
             
         # Stop VM
         result = client.stop_vm(node, vm_id)
-        
-        # Handle both string and dictionary results
-        if isinstance(result, dict):
-            task_id = result.get('data', 'Unknown')
-        else:
-            task_id = result  # Assume result is a string containing task ID
-            
-        click.echo(f"VM '{vmid}' stop initiated. Task ID: {task_id}")
+        click.echo(f"VM '{vmid}' stop initiated. Task ID: {get_task_id(result)}")
                 
     except Exception as e:
         logging.error(f"Error stopping VM: {e}")
@@ -212,14 +173,7 @@ def delete_vm(vmid, node, purge, destroy_unreferenced_disks):
 
         # Delete VM
         result = client.delete_vm(node, vm_id, purge=purge, destroy_unreferenced_disks=destroy_unreferenced_disks)
-
-        # Handle both string and dictionary results
-        if isinstance(result, dict):
-            task_id = result.get('data', 'Unknown')
-        else:
-            task_id = result  # Assume result is a string containing task ID
-
-        click.echo(f"VM '{vmid}' delete initiated. Task ID: {task_id}")
+        click.echo(f"VM '{vmid}' delete initiated. Task ID: {get_task_id(result)}")
 
     except Exception as e:
         logging.error(f"Error deleting VM: {e}")
@@ -241,14 +195,7 @@ def shutdown_vm(vmid, node):
             
         # Shutdown VM
         result = client.shutdown_vm(node, vm_id)
-        
-        # Handle both string and dictionary results
-        if isinstance(result, dict):
-            task_id = result.get('data', 'Unknown')
-        else:
-            task_id = result  # Assume result is a string containing task ID
-            
-        click.echo(f"VM '{vmid}' graceful shutdown initiated. Task ID: {task_id}")
+        click.echo(f"VM '{vmid}' graceful shutdown initiated. Task ID: {get_task_id(result)}")
                 
     except Exception as e:
         logging.error(f"Error shutting down VM: {e}")
@@ -370,30 +317,9 @@ def list_vm_templates(node, json_output, output):
         if json_output:
             click.echo(json.dumps(templates, indent=2))
             return
-        
-        # Determine fields to display
-        fields = ['vmid', 'name', 'node', 'cpu', 'maxmem']
-        if output:
-            fields = output.split(',')
-        
-        # Create table data
-        table_data = []
-        for template in templates:
-            row = []
-            for field in fields:
-                if field in template:
-                    if field == 'maxmem' and isinstance(template[field], int):
-                        # Convert bytes to GB for memory
-                        row.append(f"{template[field] / (1024**3):.2f} GB")
-                    else:
-                        row.append(template[field])
-                else:
-                    row.append("")
-            table_data.append(row)
-        
-        # Print table
-        click.echo(tabulate(table_data, headers=fields))
-        
+
+        click.echo(render_resource_table(templates, ['vmid', 'name', 'node', 'cpu', 'maxmem'], output=output))
+
     except Exception as e:
         logging.error(f"Error listing VM templates: {e}")
         raise click.ClickException(f"Error listing VM templates: {e}")
@@ -459,28 +385,14 @@ def clone_vm_command(source_vmid, name, node, target_node, storage, full, vmid, 
             
         # Clone VM
         result = client.clone_vm(source_node, source_id, params)
-        
-        # Handle both string and dictionary results
-        if isinstance(result, dict):
-            task_id = result.get('data', 'Unknown')
-        else:
-            task_id = result  # Assume result is a string containing task ID
-            
-        click.echo(f"VM clone initiated. Task ID: {task_id}")
-        
+        click.echo(f"VM clone initiated. Task ID: {get_task_id(result)}")
+
         # Start VM if requested
         if start:
             click.echo("Waiting for clone to finish before starting...")
             click.echo("Warning: Starting immediately may fail if clone is not complete.")
             start_result = client.start_vm(target_node or source_node, vmid)
-            
-            # Handle both string and dictionary results for start operation
-            if isinstance(start_result, dict):
-                start_task_id = start_result.get('data', 'Unknown')
-            else:
-                start_task_id = start_result
-                
-            click.echo(f"VM start initiated. Task ID: {start_task_id}")
+            click.echo(f"VM start initiated. Task ID: {get_task_id(start_result)}")
             
     except Exception as e:
         logging.error(f"Error cloning VM: {e}")
@@ -528,15 +440,8 @@ def migrate_vm(vmid, target, node, online, with_local_disks):
             
         # Perform migration
         result = client.migrate_vm(source_node, vm_id, **options)
-        
-        # Handle both string and dictionary results
-        if isinstance(result, dict):
-            task_id = result.get('data', 'Unknown')
-        else:
-            task_id = result
-            
         migration_type = "online" if online else "offline"
-        click.echo(f"VM '{vmid}' {migration_type} migration from '{source_node}' to '{target}' initiated. Task ID: {task_id}")
+        click.echo(f"VM '{vmid}' {migration_type} migration from '{source_node}' to '{target}' initiated. Task ID: {get_task_id(result)}")
                 
     except Exception as e:
         logging.error(f"Error migrating VM: {e}")
@@ -639,14 +544,7 @@ def config_vm(vmid, node, set_configs, delete_configs, show, json_output):
         if config_updates:
             # Apply configuration changes
             result = client.set_vm_config(vm_node, vm_id, config_updates)
-            
-            # Handle both string and dictionary results
-            if isinstance(result, dict):
-                task_id = result.get('data', 'Unknown')
-            else:
-                task_id = result
-            
-            click.echo(f"VM '{vmid}' configuration updated. Task ID: {task_id}")
+            click.echo(f"VM '{vmid}' configuration updated. Task ID: {get_task_id(result)}")
             
             # Show what was changed
             for key, value in config_updates.items():

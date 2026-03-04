@@ -1,4 +1,5 @@
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from tabulate import tabulate
 
 
 class SortError(ValueError):
@@ -59,3 +60,31 @@ def sort_items(
         )
 
     return sorted_items
+
+
+def render_resource_table(items, default_fields, output=None, mem_unit="GB"):
+    """Build and return a tabulated string for a list of PVE resource dicts.
+
+    Args:
+        items: Iterable of resource dicts (VMs, containers, …)
+        default_fields: Field list used when *output* is not specified
+        output: Optional comma-separated field override string
+        mem_unit: "GB" (default) or "MB" for maxmem formatting
+    """
+    fields = output.split(',') if output else default_fields
+    table_data = []
+    for item in items:
+        row = []
+        for field in fields:
+            if field in item:
+                if field == 'maxmem' and isinstance(item[field], int):
+                    if mem_unit == "MB":
+                        row.append(f"{item[field] / (1024**2):.0f} MB")
+                    else:
+                        row.append(f"{item[field] / (1024**3):.2f} GB")
+                else:
+                    row.append(item[field])
+            else:
+                row.append("")
+        table_data.append(row)
+    return tabulate(table_data, headers=fields)

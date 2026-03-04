@@ -5,6 +5,7 @@ import logging
 import csv as _csv
 from tabulate import tabulate
 from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
+from pyadm.ldapcli.ldap_utils import first_value, stringify_attrs, resolve_group_dn
 
 
 # Show information about a user
@@ -78,22 +79,6 @@ def user(username, list_users, json_output, csv, all, attributes, add_to_group, 
                 lock or unlock or set_attribute or set_expiry or move_to or clone_to):
                 raise click.ClickException("Cannot combine --list with user management options.")
 
-            def _first_value(attr_dict, key):
-                values = attr_dict.get(key)
-                if values is None:
-                    for attr_key, attr_values in attr_dict.items():
-                        if attr_key.lower() == key.lower():
-                            values = attr_values
-                            break
-                if not values:
-                    return None
-                if isinstance(values, list):
-                    return str(values[0]) if values else None
-                return str(values)
-
-            def _stringify_attrs(attr_dict):
-                return {str(k): [str(v) for v in vals] for k, vals in attr_dict.items()}
-
             allow_attribute_fallback = False
             if all:
                 attrs = ["*"]
@@ -109,7 +94,7 @@ def user(username, list_users, json_output, csv, all, attributes, add_to_group, 
                 payload = []
                 for entry in results:
                     attrs_dict = entry.entry_attributes_as_dict
-                    payload.append({"dn": entry.entry_dn, "attributes": _stringify_attrs(attrs_dict)})
+                    payload.append({"dn": entry.entry_dn, "attributes": stringify_attrs(attrs_dict)})
                 print(json.dumps(payload))
                 return
 
@@ -138,10 +123,10 @@ def user(username, list_users, json_output, csv, all, attributes, add_to_group, 
             table_data = []
             for entry in results:
                 attrs_dict = entry.entry_attributes_as_dict
-                uid = _first_value(attrs_dict, "uid") or _first_value(attrs_dict, "sAMAccountName")
-                cn = _first_value(attrs_dict, "cn")
-                mail = _first_value(attrs_dict, "mail")
-                display_name = _first_value(attrs_dict, "displayName")
+                uid = first_value(attrs_dict, "uid") or first_value(attrs_dict, "sAMAccountName")
+                cn = first_value(attrs_dict, "cn")
+                mail = first_value(attrs_dict, "mail")
+                display_name = first_value(attrs_dict, "displayName")
                 table_data.append([uid or "", cn or "", mail or "", display_name or ""])
             click.echo(tabulate(table_data, headers=fields))
             return
@@ -284,17 +269,10 @@ def user(username, list_users, json_output, csv, all, attributes, add_to_group, 
             groups = [g.strip() for g in add_to_groups.split(",") if g.strip()]
             success_count = 0
             for group in groups:
-                # Check if group_dn is a DN or CN
-                if "dc=" in group.lower() and "," in group:
-                    group_dn = group
-                else:
-                    # It's a CN, get the DN
-                    group_result = ldap_client.get_group(group)
-                    if not group_result:
-                        click.echo(f"Warning: No group found with CN '{group}'. Skipping.")
-                        continue
-                    group_dn = group_result[0].entry_dn
-                    
+                group_dn = resolve_group_dn(ldap_client, group)
+                if not group_dn:
+                    click.echo(f"Warning: No group found with CN '{group}'. Skipping.")
+                    continue
                 success = ldap_client.add_user_to_group(user_dn, group_dn)
                 if success:
                     success_count += 1
@@ -313,17 +291,10 @@ def user(username, list_users, json_output, csv, all, attributes, add_to_group, 
             groups = [g.strip() for g in remove_from_groups.split(",") if g.strip()]
             success_count = 0
             for group in groups:
-                # Check if group_dn is a DN or CN
-                if "dc=" in group.lower() and "," in group:
-                    group_dn = group
-                else:
-                    # It's a CN, get the DN
-                    group_result = ldap_client.get_group(group)
-                    if not group_result:
-                        click.echo(f"Warning: No group found with CN '{group}'. Skipping.")
-                        continue
-                    group_dn = group_result[0].entry_dn
-                    
+                group_dn = resolve_group_dn(ldap_client, group)
+                if not group_dn:
+                    click.echo(f"Warning: No group found with CN '{group}'. Skipping.")
+                    continue
                 success = ldap_client.remove_user_from_group(user_dn, group_dn)
                 if success:
                     success_count += 1
@@ -339,21 +310,9 @@ def user(username, list_users, json_output, csv, all, attributes, add_to_group, 
             
         # Handle add to group
         if add_to_group:
-            logging.info(f"Processing add user '{username}' to group '{add_to_group}'")
-            # Check if group_dn is a DN or CN
-            if "dc=" in add_to_group.lower() and "," in add_to_group:
-                group_dn = add_to_group
-                logging.info(f"Using group DN directly: {group_dn}")
-            else:
-                # It's a CN, get the DN
-                logging.info(f"Looking up group by CN: {add_to_group}")
-                group_result = ldap_client.get_group(add_to_group)
-                if not group_result:
-                    raise click.ClickException(f"No group found with CN '{add_to_group}'.")
-                group_dn = group_result[0].entry_dn
-                logging.info(f"Found group DN: {group_dn}")
-                
-            logging.info(f"Adding user DN '{user_dn}' to group DN '{group_dn}'")
+            group_dn = resolve_group_dn(ldap_client, add_to_group)
+            if not group_dn:
+                raise click.ClickException(f"No group found with CN '{add_to_group}'.")
             success = ldap_client.add_user_to_group(user_dn, group_dn)
             if success:
                 click.echo(f"User '{username}' added to group '{add_to_group}'.")
@@ -363,15 +322,9 @@ def user(username, list_users, json_output, csv, all, attributes, add_to_group, 
             
         # Handle remove from group
         if remove_from_group:
-            # Check if group_dn is a DN or CN
-            if "dc=" in remove_from_group.lower() and "," in remove_from_group:
-                group_dn = remove_from_group
-            else:
-                # It's a CN, get the DN
-                group_result = ldap_client.get_group(remove_from_group)
-                if not group_result:
-                    raise click.ClickException(f"No group found with CN '{remove_from_group}'.")
-                group_dn = group_result[0].entry_dn
+            group_dn = resolve_group_dn(ldap_client, remove_from_group)
+            if not group_dn:
+                raise click.ClickException(f"No group found with CN '{remove_from_group}'.")
                 
             success = ldap_client.remove_user_from_group(user_dn, group_dn)
             if success:

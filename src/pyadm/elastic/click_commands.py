@@ -1,4 +1,3 @@
-# New imports for new commands
 import sys
 import click
 import json
@@ -8,6 +7,7 @@ from tabulate import tabulate
 
 from pyadm.elastic.elastic import ElasticSearch
 from pyadm.config import cluster_config
+from pyadm.context_utils import register_context_commands
 from pyadm.helper import Helper
 
 defaults = {
@@ -16,6 +16,14 @@ defaults = {
     "password": "changeme",
     "suffix": "reindex"
 }
+
+
+def parse_json_arg(value: str, label: str = "JSON"):
+    """Parse a JSON string argument, raising ClickException on failure."""
+    try:
+        return json.loads(value)
+    except Exception as e:
+        raise click.ClickException(f"Invalid {label}: {e}")
 
 
 # Holds the selected context name
@@ -66,44 +74,7 @@ def elastic_context():
     pass
 
 
-@elastic_context.command("list")
-def list_contexts():
-    """List available Elastic contexts."""
-    try:
-        contexts = cluster_config.list_contexts(prefix="ELASTIC")
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
-    if not contexts:
-        click.echo("No Elastic contexts found.")
-        return
-
-    active = cluster_config.get_active_context(prefix="ELASTIC")
-    rows = []
-    for entry in contexts:
-        marker = "*" if active and entry["name"].lower() == active.lower() else ""
-        rows.append([marker, entry["name"], entry["section"]])
-    click.echo(tabulate(rows, headers=["ACTIVE", "CONTEXT", "CONFIG SECTION"], tablefmt="plain"))
-
-
-@elastic_context.command("current")
-def current_context():
-    """Show the currently active Elastic context."""
-    try:
-        resolved = cluster_config.resolve_context(prefix="ELASTIC")
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
-    click.echo(f"{resolved['name']} (section: {resolved['section']})")
-
-
-@elastic_context.command("use")
-@click.argument("context_name")
-def use_context(context_name):
-    """Switch active Elastic context."""
-    try:
-        selected = cluster_config.set_active_context(prefix="ELASTIC", name=context_name)
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
-    click.echo(f"Active Elastic context set to: {selected}")
+register_context_commands(elastic_context, "ELASTIC", "Elastic")
 
 # show information about a user
 # show information about a user
@@ -144,7 +115,6 @@ def create_index(index, body):
         pyadm elastic create-index my-logs
         pyadm elastic create-index users --body '{"settings":{"number_of_shards":3}}'
     """
-    import json
     body_dict = json.loads(body) if body else None
     success = get_es().create_index(index, body_dict)
     if success:
@@ -185,12 +155,7 @@ def search(index, query, size):
         pyadm elastic search users --query '{"term":{"status":"active"}}' --size 5
         pyadm elastic search "*" --query '{"match_all":{}}' --size 20
     """
-    import json
-    try:
-        query_dict = json.loads(query)
-    except Exception as e:
-        print(f"Invalid query JSON: {e}", file=sys.stderr)
-        return
+    query_dict = parse_json_arg(query, "query JSON")
     data = get_es().search(index, query_dict, size)
     Helper.print_data(data)
 
@@ -243,12 +208,7 @@ def update_settings(index, settings):
         pyadm elastic update-settings my-logs --settings '{"number_of_replicas":2}'
         pyadm elastic update-settings logs --settings '{"refresh_interval":"30s"}'
     """
-    import json
-    try:
-        settings_dict = json.loads(settings)
-    except Exception as e:
-        print(f"Invalid settings JSON: {e}", file=sys.stderr)
-        return
+    settings_dict = parse_json_arg(settings, "settings JSON")
     success = get_es().update_settings(index, settings_dict)
     if success:
         print(f"Settings updated for index '{index}'.")
