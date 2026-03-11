@@ -119,6 +119,14 @@ class OfflinePVEClient:
     def shutdown_vm(self, node: str, vmid: int) -> Dict[str, Any]:
         """Simulate shutting down a VM."""
         return {'data': f'UPID:node{node}:{datetime.now().strftime("%Y%m%d")}:shutdown:'}
+
+    def unlock_vm(self, node: str, vmid: int) -> None:
+        """Simulate unlocking a VM."""
+        pass
+
+    def unlock_container(self, node: str, vmid: int) -> None:
+        """Simulate unlocking a container."""
+        pass
     
     def get_containers(self, node: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get sample container data."""

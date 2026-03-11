@@ -202,6 +202,32 @@ def shutdown_vm(vmid, node):
         raise click.ClickException(f"Error shutting down VM: {e}")
 
 
+@vm.command("unlock")
+@click.argument("vmid")
+@click.option("--node", "-n", default=None, help="Node name (not needed if VM name is unique)")
+def unlock_vm(vmid, node):
+    """
+    Remove the lock on a virtual machine.
+
+    Proxmox sets a lock on VMs during long-running operations (backup, migration,
+    snapshot, …). Use this command to clear a stuck lock.
+
+    \b
+    Examples:
+        pyadm pve vm unlock 100
+        pyadm pve vm unlock web-server
+        pyadm pve vm unlock 100 --node pve1
+    """
+    try:
+        client = get_pve_client()
+        vm_id, node = resolve_resource_id(client, vmid, node, "vm")
+        client.unlock_vm(node, vm_id)
+        click.echo(f"VM '{vmid}' unlocked successfully.")
+    except Exception as e:
+        logging.error(f"Error unlocking VM: {e}")
+        raise click.ClickException(f"Error unlocking VM: {e}")
+
+
 @vm.command("create")
 @click.option("--node", "-n", required=True, help="Node name where VM will be created")
 @click.option("--name", required=True, help="Name of the VM")

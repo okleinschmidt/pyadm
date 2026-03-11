@@ -161,6 +161,32 @@ def delete_container(vmid, node, purge, destroy_unreferenced_disks):
         raise click.ClickException(f"Error deleting container: {e}")
 
 
+@container.command("unlock")
+@click.argument("ctid")
+@click.option("--node", "-n", default=None, help="Node name (not needed if container name is unique)")
+def unlock_container(ctid, node):
+    """
+    Remove the lock on a container.
+
+    Proxmox sets a lock on containers during long-running operations (backup,
+    migration, snapshot, …). Use this command to clear a stuck lock.
+
+    \b
+    Examples:
+        pyadm pve ct unlock 200
+        pyadm pve ct unlock web-ct
+        pyadm pve ct unlock 200 --node pve1
+    """
+    try:
+        client = get_pve_client()
+        ct_id, node = resolve_resource_id(client, ctid, node, "container")
+        client.unlock_container(node, ct_id)
+        click.echo(f"Container '{ctid}' unlocked successfully.")
+    except Exception as e:
+        logging.error(f"Error unlocking container: {e}")
+        raise click.ClickException(f"Error unlocking container: {e}")
+
+
 @container.command("list-templates")
 @click.option("--node", "-n", required=True, help="Node name where templates are stored")
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output as JSON")

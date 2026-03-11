@@ -392,6 +392,17 @@ class PVEClient:
             self.logger.error(f"Error shutting down VM {vmid} on node '{node}': {e}")
             raise
     
+    def unlock_vm(self, node: str, vmid: int) -> None:
+        """Remove the lock on a VM by deleting the lock config field."""
+        try:
+            online_nodes = self.get_online_nodes()
+            if node not in online_nodes:
+                raise Exception(f"Node '{node}' is offline, cannot unlock VM")
+            self.api.nodes(node).qemu(vmid).config.put(delete='lock')
+        except Exception as e:
+            self.logger.error(f"Error unlocking VM {vmid} on node '{node}': {e}")
+            raise
+
     def start_container(self, node: str, vmid: int) -> Dict[str, Any]:
         """
         Start a container.
@@ -434,6 +445,17 @@ class PVEClient:
             return self.api.nodes(node).lxc(vmid).status.stop.post()
         except Exception as e:
             self.logger.error(f"Error stopping container {vmid} on node '{node}': {e}")
+            raise
+
+    def unlock_container(self, node: str, vmid: int) -> None:
+        """Remove the lock on a container by deleting the lock config field."""
+        try:
+            online_nodes = self.get_online_nodes()
+            if node not in online_nodes:
+                raise Exception(f"Node '{node}' is offline, cannot unlock container")
+            self.api.nodes(node).lxc(vmid).config.put(delete='lock')
+        except Exception as e:
+            self.logger.error(f"Error unlocking container {vmid} on node '{node}': {e}")
             raise
 
     def delete_vm(self, node: str, vmid: int, purge: bool = True, destroy_unreferenced_disks: bool = True) -> Dict[str, Any]:
