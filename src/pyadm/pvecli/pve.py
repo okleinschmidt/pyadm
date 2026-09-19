@@ -5,6 +5,8 @@ from typing import Dict, List, Optional, Any, Union
 from proxmoxer import ProxmoxAPI
 import requests
 
+from pyadm.net_utils import apply_force_ipv4
+
 class PVEClient:
     """
     Client for Proxmox Virtual Environment API.
@@ -40,6 +42,7 @@ class PVEClient:
         token_name = self.config.get('token_name', '')
         token_value = self.config.get('token_value', '')
         verify_ssl = self.config.get('verify_ssl', 'true').lower() == 'true'
+        force_ipv4 = apply_force_ipv4(self.config)
         
         # Show connection info in debug mode
         if self.debug:
@@ -47,6 +50,7 @@ class PVEClient:
             self.logger.debug(f"User: {user}")
             self.logger.debug(f"Using token: {bool(token_name)}")
             self.logger.debug(f"Verify SSL: {verify_ssl}")
+            self.logger.debug(f"Force IPv4: {force_ipv4}")
         
         try:
             if token_name and token_value:

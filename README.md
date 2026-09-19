@@ -430,6 +430,7 @@ bind_username = cn=readonly,dc=example,dc=org
 bind_password = staging-secret
 use_starttls = false
 skip_tls_verify = true
+force_ipv4 = true
 
 [ELASTIC_CONTEXT_prod]
 name = prod
@@ -446,6 +447,7 @@ username = elastic_ro
 password = ops-secret
 engine = opensearch
 skip_tls_verify = true
+force_ipv4 = true
 
 [PVE_CONTEXT_homelab]
 name = homelab
@@ -461,6 +463,7 @@ user = automation@pve
 token_name = pyadm
 token_value = secret-token-value
 verify_ssl = true
+force_ipv4 = true
 ```
 
 ### Configuration Options
@@ -473,6 +476,7 @@ verify_ssl = true
 - `use_ssl` - Force SSL connection (true/false)
 - `use_starttls` - Use STARTTLS for encryption (true/false)
 - `skip_tls_verify` - Skip TLS certificate verification (true/false)
+- `force_ipv4` - Only connect over IPv4 (true/false, see below)
 
 **Elasticsearch Settings:**
 - `url` - Elasticsearch cluster URL
@@ -480,6 +484,7 @@ verify_ssl = true
 - `password` - Password for authentication
 - `engine` - `elasticsearch` or `opensearch` (optional)
 - `skip_tls_verify` - Skip TLS certificate verification (true/false)
+- `force_ipv4` - Only connect over IPv4 (true/false, see below)
 
 **Proxmox Settings:**
 - `host` - Proxmox server hostname or IP
@@ -488,6 +493,27 @@ verify_ssl = true
 - `token_name` - API token name (format: user@realm!tokenname)
 - `token_value` - API token value
 - `verify_ssl` - Verify SSL certificates (true/false)
+- `force_ipv4` - Only connect over IPv4 (true/false, see below)
+
+#### `force_ipv4`
+
+Set `force_ipv4 = true` when a host has an AAAA record whose address is not
+reachable from your client (dropped packets rather than a refused connection).
+The underlying libraries do not implement Happy Eyeballs: they try the resolved
+addresses strictly in order, so every new TCP connection blocks on the full
+connect timeout for the dead IPv6 address before falling back to IPv4. With
+several requests per command this easily adds tens of seconds.
+
+Symptoms: commands such as `pyadm pve vm list` take a multiple of the connect
+timeout, while `curl` against the same host is fast (curl does implement Happy
+Eyeballs). Verify with:
+
+```shell
+python3 -c "import socket,time; t=time.time(); socket.create_connection(('myhost.example.org', 8006)); print(time.time()-t)"
+```
+
+Fixing DNS or the firewall on the target host is the better long-term solution;
+`force_ipv4` is the client-side workaround.
 
 ### Multi-Environment Usage
 

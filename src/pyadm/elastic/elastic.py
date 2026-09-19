@@ -9,6 +9,8 @@ except ImportError:
     OPENSEARCH_AVAILABLE = False
 from elasticsearch import Elasticsearch
 
+from pyadm.net_utils import apply_force_ipv4, config_flag
+
 class ElasticSearch:
     """
     Wrapper class for Elasticsearch and OpenSearch operations.
@@ -18,14 +20,17 @@ class ElasticSearch:
         Initialize the connection to the Elasticsearch or OpenSearch cluster.
 
         Args:
-            config (Dict[str, Any]): Configuration dictionary with 'url', 'username', 'password', optionally 'engine', 'skip_tls_verify'.
+            config (Dict[str, Any]): Configuration dictionary with 'url', 'username', 'password', optionally 'engine', 'skip_tls_verify', 'force_ipv4'.
         """
         self.config = config
         self.engine = config.get('engine', '').lower()
         self.client: Union[Elasticsearch, Any]
 
+        # Restrict to IPv4 if the cluster host has an unreachable AAAA record
+        apply_force_ipv4(config)
+
         # TLS/SSL verification
-        skip_tls_verify = str(config.get('skip_tls_verify', 'false')).lower() in ('1', 'true', 'yes', 'on')
+        skip_tls_verify = config_flag(config, 'skip_tls_verify')
         ssl_kwargs = {}
         if skip_tls_verify:
             ssl_kwargs = {

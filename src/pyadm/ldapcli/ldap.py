@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 import ldap3
 from ldap3.core.exceptions import LDAPException
 
+from pyadm.net_utils import config_flag, force_ipv4_enabled
+
 class LDAPClient:
 
     def user_exists(self, username: str) -> bool:
@@ -180,9 +182,14 @@ class LDAPClient:
         Establish and bind the LDAP connection.
         """
         server_kwargs = {}
-        skip_tls_verify = str(self.config.get('skip_tls_verify', 'false')).lower() in ('1', 'true', 'yes', 'on')
-        use_starttls = str(self.config.get('use_starttls', 'false')).lower() in ('1', 'true', 'yes', 'on')
-        use_ssl = str(self.config.get('use_ssl', 'false')).lower() in ('1', 'true', 'yes', 'on')
+        skip_tls_verify = config_flag(self.config, 'skip_tls_verify')
+        use_starttls = config_flag(self.config, 'use_starttls')
+        use_ssl = config_flag(self.config, 'use_ssl')
+
+        # Skip unreachable AAAA records instead of blocking on their connect timeout
+        if force_ipv4_enabled(self.config):
+            server_kwargs['mode'] = ldap3.IP_V4_ONLY
+            logging.debug("force_ipv4 is set: restricting LDAP connections to IPv4")
         
         # Handle SSL/TLS configuration
         server_url = self.config['server']

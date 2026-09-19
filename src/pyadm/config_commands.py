@@ -120,6 +120,7 @@ bind_password = secret
 skip_tls_verify = true
 use_starttls = false
 timeout = 30
+force_ipv4 = true
 
 # ---------------------------
 # Elastic contexts
@@ -139,6 +140,7 @@ username = elastic_ro
 password = secret
 engine = opensearch
 skip_tls_verify = true
+force_ipv4 = true
 
 # ---------------------------
 # PVE contexts
@@ -159,6 +161,9 @@ user = api@pam
 token_name = pyadm
 token_value = xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 verify_ssl = false
+# Only connect over IPv4. Useful when the host has an AAAA record that is
+# not reachable: every new connection would otherwise block on its timeout.
+force_ipv4 = true
 
 # Backward compatibility:
 # Existing sections like [LDAP], [LDAP_PROD], [ELASTIC], [ELASTIC_PROD], [PVE], [PVE_PROD]
