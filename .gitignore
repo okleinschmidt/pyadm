@@ -4,6 +4,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 output*
+# ...but this is a source module, not build output.
+!src/pyadm/output.py
 *.conf
 config/*.conf
 # C extensions

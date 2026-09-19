@@ -1,6 +1,8 @@
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from tabulate import tabulate
 
+from pyadm.output import guest_status, usage
+
 
 class SortError(ValueError):
     pass
@@ -62,6 +64,29 @@ def sort_items(
     return sorted_items
 
 
+# Fields that are "some amount of a maximum", mapped to the field holding that
+# maximum. They are rendered as "used (NN%)" and coloured by how full they are.
+USAGE_FIELDS = {
+    'mem': 'maxmem',
+    'disk': 'maxdisk',
+}
+
+
+def format_uptime(seconds: float) -> str:
+    """Render an uptime in days/hours/minutes rather than a long hour count."""
+    seconds = int(seconds)
+    days, hours = seconds // 86400, (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    return f"{days}d {hours}h" if days else f"{hours}h {minutes}m"
+
+
+def format_bytes(value: int, unit: str = "GB") -> str:
+    """Render a byte count in GB (default) or MB."""
+    if unit == "MB":
+        return f"{value / (1024**2):.0f} MB"
+    return f"{value / (1024**3):.2f} GB"
+
+
 def render_resource_table(items, default_fields, output=None, mem_unit="GB"):
     """Build and return a tabulated string for a list of PVE resource dicts.
 
@@ -78,14 +103,23 @@ def render_resource_table(items, default_fields, output=None, mem_unit="GB"):
         for field in fields:
             if field in item:
                 value = item[field]
-                if field == 'maxmem' and isinstance(value, int):
-                    if mem_unit == "MB":
-                        row.append(f"{value / (1024**2):.0f} MB")
-                    else:
-                        row.append(f"{value / (1024**3):.2f} GB")
+                if field in ('maxmem', 'maxdisk') and isinstance(value, int):
+                    row.append(format_bytes(value, mem_unit if field == 'maxmem' else "GB"))
+                elif field == 'uptime' and isinstance(value, (int, float)):
+                    row.append(format_uptime(value))
                 elif field == 'cpu' and isinstance(value, (int, float)):
                     # The API reports CPU usage as a 0..1 fraction, not a percentage
-                    row.append(f"{value * 100:.1f}%")
+                    row.append(usage(value * 100))
+                elif field in USAGE_FIELDS and isinstance(value, int):
+                    # Show how much of the matching maximum is in use, not just the raw size
+                    maximum = item.get(USAGE_FIELDS[field])
+                    percent = (value / maximum * 100) if maximum else None
+                    text = format_bytes(value, mem_unit)
+                    if percent is not None:
+                        text = f"{text} ({percent:.0f}%)"
+                    row.append(usage(percent, text))
+                elif field == 'status':
+                    row.append(guest_status(value))
                 else:
                     row.append(value)
             else:

@@ -2,6 +2,7 @@ import click
 import logging
 import os.path
 from typing import Optional
+from pyadm import output
 from pyadm.config import cluster_config
 from pyadm.context_utils import register_context_commands
 from pyadm.pvecli.pve import PVEClient
@@ -62,6 +63,7 @@ def get_pve_client() -> Optional[PVEClient]:
     """Get a PVE client instance based on configuration."""
     if selected_pve["offline"]:
         from pyadm.pvecli.offline_client import OfflinePVEClient
+        output.init_colors()
         click.echo("OFFLINE mode: Using sample data")
         offline_client = OfflinePVEClient()
         if selected_pve["dry_run"]:
@@ -83,6 +85,7 @@ def get_pve_client() -> Optional[PVEClient]:
     
     try:
         cfg = cluster_config.get_cluster(selected_pve["context"], prefix="PVE")
+        output.init_colors(cfg)
         
         # Check for required config values
         required_keys = ['host']
@@ -104,7 +107,7 @@ def get_pve_client() -> Optional[PVEClient]:
             )
             
         if selected_pve["debug"]:
-            logging.basicConfig(level=logging.DEBUG)
+            logging.getLogger().setLevel(logging.DEBUG)
             
         client = PVEClient(cfg, debug=selected_pve["debug"])
         if selected_pve["dry_run"]:

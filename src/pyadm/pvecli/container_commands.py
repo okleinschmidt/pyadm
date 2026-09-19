@@ -5,7 +5,8 @@ import os
 import logging
 from tabulate import tabulate
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id, get_task_id
-from pyadm.pvecli.list_utils import sort_items, SortError, render_resource_table
+from pyadm.pvecli.list_utils import sort_items, SortError, render_resource_table, format_uptime
+from pyadm.output import guest_status, usage
 
 
 @pvecli.group("ct", context_settings={'help_option_names': ['-h', '--help']})
@@ -38,7 +39,7 @@ def list_containers(node, status, json_output, output, templates, sort):
             
         if sort:
             try:
-                containers = sort_items(containers, sort, allowed_fields={"id", "vmid", "name", "status", "node"}, field_map={"id": "vmid"})
+                containers = sort_items(containers, sort, allowed_fields={"id", "vmid", "name", "status", "node", "cpu", "mem", "maxmem", "disk", "maxdisk", "uptime"}, field_map={"id": "vmid"})
             except SortError as e:
                 raise click.ClickException(str(e))
 
@@ -46,7 +47,7 @@ def list_containers(node, status, json_output, output, templates, sort):
             click.echo(json.dumps(containers, indent=2))
             return
 
-        click.echo(render_resource_table(containers, ['vmid', 'name', 'status', 'node', 'maxmem'], output=output, mem_unit="MB"))
+        click.echo(render_resource_table(containers, ['vmid', 'name', 'status', 'node', 'cpu', 'mem', 'maxmem'], output=output, mem_unit="MB"))
 
     except Exception as e:
         logging.error(f"Error listing containers: {e}")
@@ -75,18 +76,23 @@ def get_container_status(vmid, node, json_output):
         else:
             # Format and display status
             click.echo(f"Container: {vmid}")
-            click.echo(f"Status: {status.get('status', 'unknown')}")
+            click.echo(f"Status: {guest_status(status.get('status', 'unknown'))}")
             click.echo(f"Node: {node}")
             
             # Display additional details
             if 'cpus' in status:
                 click.echo(f"CPUs: {status['cpus']}")
             if 'maxmem' in status:
-                mem_mb = status['maxmem'] / (1024**2)
-                click.echo(f"Memory: {mem_mb:.0f} MB")
+                max_mem = status['maxmem'] / (1024**2)
+                used = status.get('mem')
+                if isinstance(used, (int, float)) and status['maxmem']:
+                    percent = used / status['maxmem'] * 100
+                    text = f"{used / (1024**2):.0f} MB used of {max_mem:.0f} MB ({percent:.0f}%)"
+                    click.echo(f"Memory: {usage(percent, text)}")
+                else:
+                    click.echo(f"Memory: {max_mem:.0f} MB")
             if 'uptime' in status and status['uptime']:
-                uptime_hours = status['uptime'] / 3600
-                click.echo(f"Uptime: {uptime_hours:.2f} hours")
+                click.echo(f"Uptime: {format_uptime(status['uptime'])}")
                 
     except Exception as e:
         logging.error(f"Error getting container status: {e}")

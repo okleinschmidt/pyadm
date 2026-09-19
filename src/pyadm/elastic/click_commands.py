@@ -5,6 +5,8 @@ import re
 
 from tabulate import tabulate
 
+from pyadm import output
+
 from pyadm.elastic.elastic import ElasticSearch
 from pyadm.config import cluster_config
 from pyadm.context_utils import register_context_commands
@@ -58,6 +60,7 @@ def elastic(context):
         pyadm elastic indices                       # List all indices
         pyadm elastic indices --limit 20            # List the first 20 indices
         pyadm elastic search logs -q '{"match_all":{}}'   # Search the logs index
+        pyadm elastic shards                        # Shard budget and disk headroom
         pyadm elastic aliases                       # Show index aliases
         pyadm elastic health                       # Check cluster health
         
@@ -74,6 +77,7 @@ def get_es():
         cluster_cfg = cluster_config.get_cluster(selected_context["name"], prefix="ELASTIC")
     except RuntimeError as exc:
         raise click.ClickException(str(exc)) from exc
+    output.init_colors(cluster_cfg)
     return ElasticSearch(cluster_cfg)
 
 
@@ -106,7 +110,9 @@ def health():
     Displays cluster health color (green/yellow/red), number of nodes,
     active/relocating shards, and other health metrics.
     """
-    data = get_es().cluster_health()
+    data = dict(get_es().cluster_health())
+    if "status" in data:
+        data["status"] = output.cluster_status(data["status"])
     Helper.print_data(data)
 
 
@@ -223,6 +229,120 @@ def update_settings(index, settings):
         print(f"Settings updated for index '{index}'.")
     else:
         print(f"Failed to update settings for index '{index}'.", file=sys.stderr)
+
+@elastic.command("shards")
+@click.option('--by-index', is_flag=True, help='Show shard count per index instead of the summary')
+@click.option('--limit', '-l', default=20, type=int, help='With --by-index: how many indices to show (0 = all)')
+@click.option('--json', 'as_json', is_flag=True, help='Output as JSON')
+def shards(by_index, limit, as_json):
+    """Show shard budget usage and disk headroom.
+
+    A cluster stops accepting new shards once the number of open shards reaches
+    cluster.max_shards_per_node times the number of data nodes. Unassigned
+    replicas count towards that budget too. Running out of disk blocks writes in
+    the same way, so both are reported together.
+
+    \b
+    Examples:
+        pyadm elastic shards                  # Budget, headroom and disk per node
+        pyadm elastic shards --by-index       # Which indices consume the budget
+        pyadm elastic shards --by-index -l 0  # All indices
+        pyadm elastic shards --json           # Machine-readable
+    """
+    try:
+        client = get_es()
+
+        if by_index:
+            rows = client.get_shards_per_index()
+            if limit:
+                rows = rows[:limit]
+            if as_json:
+                click.echo(json.dumps(rows, indent=2))
+                return
+            if not rows:
+                click.echo("No shards found.")
+                return
+            fields = ['index', 'shards', 'primaries', 'replicas', 'unassigned']
+            click.echo(tabulate([[r[f] for f in fields] for r in rows], headers=fields))
+            return
+
+        capacity = client.get_shard_capacity()
+        allocation = client.get_node_allocation()
+
+        if as_json:
+            click.echo(json.dumps({"capacity": capacity, "nodes": allocation}, indent=2))
+            return
+
+        limit_total = capacity['limit']
+        percent = capacity['percent_used']
+
+        click.echo(f"Cluster status : {output.cluster_status(capacity['cluster_status'])}")
+        if limit_total:
+            budget = f"{capacity['used']} / {limit_total} used ({percent}%), {capacity['remaining']} remaining"
+            # Colour the budget line by how close it is to refusing new shards.
+            budget_color = 'red' if percent >= 90 else 'yellow' if percent >= 80 else 'green'
+            click.echo(f"Shard budget   : {output.style(budget, budget_color)}")
+        else:
+            click.echo(f"Shard budget   : {capacity['used']} used (no limit could be determined)")
+        click.echo(
+            f"                 {capacity['max_shards_per_node']} max_shards_per_node "
+            f"x {capacity['data_nodes']} data node(s)"
+        )
+        unassigned = capacity['unassigned']
+        unassigned_text = f"{unassigned} unassigned"
+        if unassigned:
+            unassigned_text = output.style(unassigned_text, 'yellow')
+        click.echo(
+            f"Shards         : {capacity['primaries']} primaries, "
+            f"{capacity['replicas']} replicas, {unassigned_text}"
+        )
+
+        node_rows = [row for row in allocation if row.get('disk.percent') is not None]
+        if node_rows:
+            marks = node_rows[0]
+            click.echo(
+                f"\nDisk per node (watermarks: low {marks['watermark_low']}, "
+                f"high {marks['watermark_high']}, flood {marks['watermark_flood']})"
+            )
+            headers = ['node', 'shards', 'used', 'avail', 'total', 'use%', 'state']
+            table = [
+                [
+                    row.get('node', ''),
+                    row.get('shards', ''),
+                    row.get('disk.used', ''),
+                    row.get('disk.avail', ''),
+                    row.get('disk.total', ''),
+                    f"{row.get('disk.percent')}%",
+                    output.disk_state(row.get('state')),
+                ]
+                for row in sorted(node_rows, key=lambda r: -float(r.get('disk.percent') or 0))
+            ]
+            click.echo(tabulate(table, headers=headers))
+
+        notes = []
+        if unassigned:
+            notes.append(
+                f"{unassigned} unassigned shard(s) still consume budget. Reducing replicas frees it."
+            )
+        if limit_total and percent is not None and percent >= 80:
+            notes.append(
+                f"{percent}% of the shard budget is in use. New indices are refused at 100%."
+            )
+        for row in node_rows:
+            if row.get('state') in ('low', 'high', 'flood'):
+                notes.append(
+                    f"Node '{row['node']}' is at {row['disk.percent']}% disk "
+                    f"({row['state']} watermark); indices go read-only at flood stage."
+                )
+        if notes:
+            click.echo()
+            for note in notes:
+                click.echo(output.style(f"! {note}", 'yellow'))
+    except click.ClickException:
+        raise
+    except Exception as e:
+        raise click.ClickException(f"An error occurred: {e}")
+
 
 @elastic.command("indices")
 @click.option('--limit', '-l', default=None, type=int, help='Limit the number of rows to display')

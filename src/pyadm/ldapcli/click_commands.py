@@ -1,6 +1,7 @@
 import click
 import logging
 from typing import Optional
+from pyadm import output
 from pyadm.config import cluster_config
 from pyadm.context_utils import register_context_commands
 from pyadm.ldapcli.ldap import LDAPClient
@@ -40,6 +41,7 @@ def get_ldap_client(password: Optional[str] = None):
         cfg = cluster_config.get_cluster(selected_ldap_context["name"], prefix="LDAP")
     except RuntimeError as exc:
         raise click.ClickException(str(exc)) from exc
+    output.init_colors(cfg)
     return LDAPClient(cfg, password=password)
 
 

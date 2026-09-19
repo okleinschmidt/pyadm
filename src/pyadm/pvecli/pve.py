@@ -140,8 +140,13 @@ class PVEClient:
             online_nodes = self.get_online_nodes()
             if node not in online_nodes:
                 return {'status': 'offline', 'node': node}
-                
-            return self.api.nodes(node).status.get()
+
+            status = dict(self.api.nodes(node).status.get())
+            # That endpoint reports load, memory and uptime but no status field;
+            # reaching here means the node is in the online list.
+            status.setdefault('status', 'online')
+            status.setdefault('node', node)
+            return status
         except Exception as e:
             self.logger.error(f"Error getting status for node '{node}': {e}")
             raise

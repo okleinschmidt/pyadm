@@ -4,7 +4,8 @@ import sys
 import logging
 from tabulate import tabulate
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client
-from pyadm.pvecli.list_utils import sort_items, SortError
+from pyadm.pvecli.list_utils import sort_items, SortError, render_resource_table, format_uptime
+from pyadm.output import guest_status, usage
 
 
 @pvecli.group("node", context_settings={'help_option_names': ['-h', '--help']})
@@ -27,7 +28,7 @@ def list_nodes(json_output, output, sort):
         
         if sort:
             try:
-                nodes = sort_items(nodes, sort, allowed_fields={"node", "status", "uptime", "cpu", "maxmem", "maxdisk"})
+                nodes = sort_items(nodes, sort, allowed_fields={"node", "status", "uptime", "cpu", "mem", "maxmem", "disk", "maxdisk"})
             except SortError as e:
                 raise click.ClickException(str(e))
 
@@ -35,35 +36,8 @@ def list_nodes(json_output, output, sort):
             click.echo(json.dumps(nodes, indent=2))
             return
         
-        # Determine fields to display
-        fields = ['node', 'status', 'uptime', 'cpu', 'maxmem', 'maxdisk']
-        if output:
-            fields = output.split(',')
-        
-        # Create table data
-        table_data = []
-        for node_info in nodes:
-            row = []
-            for field in fields:
-                if field in node_info:
-                    value = node_info[field]
-                    if field == 'uptime' and isinstance(value, (int, float)):
-                        # Convert seconds to hours for uptime
-                        row.append(f"{value / 3600:.2f} hours")
-                    elif field in ['maxmem', 'maxdisk'] and isinstance(value, (int, float)):
-                        # Convert bytes to GB for memory and disk
-                        row.append(f"{value / (1024**3):.2f} GB")
-                    elif field == 'cpu' and isinstance(value, (int, float)):
-                        # The API reports CPU usage as a 0..1 fraction, not a percentage
-                        row.append(f"{value * 100:.1f}%")
-                    else:
-                        row.append(str(value))
-                else:
-                    row.append("")
-            table_data.append(row)
-        
-        # Print table
-        click.echo(tabulate(table_data, headers=fields))
+        fields = ['node', 'status', 'uptime', 'cpu', 'mem', 'disk']
+        click.echo(render_resource_table(nodes, fields, output=output))
         
     except Exception as e:
         logging.error(f"Error listing nodes: {e}")
@@ -86,13 +60,12 @@ def get_node_status(node_name, json_output):
         else:
             # Format and display status
             click.echo(f"Node: {node_name}")
-            click.echo(f"Status: {status.get('status', 'unknown')}")
+            click.echo(f"Status: {guest_status(status.get('status', 'unknown'))}")
             
             if 'uptime' in status:
                 uptime_val = status['uptime']
                 if isinstance(uptime_val, (int, float)):
-                    uptime_hours = uptime_val / 3600
-                    click.echo(f"Uptime: {uptime_hours:.2f} hours")
+                    click.echo(f"Uptime: {format_uptime(uptime_val)}")
                 else:
                     click.echo(f"Uptime: {uptime_val}")
                 
@@ -111,7 +84,7 @@ def get_node_status(node_name, json_output):
             if 'cpu' in status:
                 cpu_val = status['cpu']
                 if isinstance(cpu_val, (int, float)):
-                    click.echo(f"CPU usage: {cpu_val * 100:.2f}%")
+                    click.echo(f"CPU usage: {usage(cpu_val * 100)}")
                 else:
                     click.echo(f"CPU usage: {cpu_val}")
                 
@@ -122,7 +95,11 @@ def get_node_status(node_name, json_output):
                     if isinstance(mem_total, (int, float)) and isinstance(mem_used, (int, float)):
                         mem_gb = mem_total / (1024**3)
                         used_gb = mem_used / (1024**3)
-                        click.echo(f"Memory: {used_gb:.2f} GB used of {mem_gb:.2f} GB")
+                        percent = (mem_used / mem_total * 100) if mem_total else None
+                        text = f"{used_gb:.2f} GB used of {mem_gb:.2f} GB"
+                        if percent is not None:
+                            text = f"{text} ({percent:.0f}%)"
+                        click.echo(f"Memory: {usage(percent, text)}")
                     else:
                         click.echo(f"Memory: {mem_used} used of {mem_total}")
                 except (TypeError, ValueError):

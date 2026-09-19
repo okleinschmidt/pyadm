@@ -77,6 +77,141 @@ class ElasticSearch:
             logging.error(f"Error listing indices: {e}")
             raise Exception(f"An error occurred: {e}")
 
+    def _cluster_setting(self, key: str, fallback: Any) -> Any:
+        """
+        Read an effective cluster setting, honouring the usual precedence.
+
+        Transient beats persistent beats the built-in default, which is what the
+        cluster itself applies.
+        """
+        try:
+            settings = self.client.cluster.get_settings(include_defaults=True, flat_settings=True)
+        except Exception as e:
+            logging.debug(f"Could not read cluster settings ({e}); assuming {key}={fallback}")
+            return fallback
+        for scope in ("transient", "persistent", "defaults"):
+            value = (settings.get(scope) or {}).get(key)
+            if value is not None:
+                return value
+        return fallback
+
+    def get_shard_capacity(self) -> Dict[str, Any]:
+        """
+        Report how much of the cluster's shard budget is used.
+
+        A cluster refuses to create new shards once the number of open shards
+        reaches cluster.max_shards_per_node times the number of data nodes. Both
+        assigned and unassigned shards count towards it, so an unassigned replica
+        consumes budget just like a started primary does. Closed indices do not.
+
+        Returns:
+            Dict[str, Any]: used, limit, remaining, percent_used and the parts it
+            was computed from.
+        """
+        try:
+            health = self.client.cluster.health()
+            shards = self.client.cat.shards(format="json")
+
+            data_nodes = int(health.get("number_of_data_nodes") or 0)
+            max_per_node = int(self._cluster_setting("cluster.max_shards_per_node", 1000))
+            limit = max_per_node * data_nodes
+
+            used = len(shards)
+            primaries = sum(1 for shard in shards if shard.get("prirep") == "p")
+            unassigned = sum(1 for shard in shards if shard.get("state") == "UNASSIGNED")
+
+            return {
+                "used": used,
+                "limit": limit,
+                "remaining": max(limit - used, 0),
+                "percent_used": round(used / limit * 100, 1) if limit else None,
+                "primaries": primaries,
+                "replicas": used - primaries,
+                "unassigned": unassigned,
+                "data_nodes": data_nodes,
+                "max_shards_per_node": max_per_node,
+                "cluster_status": health.get("status"),
+            }
+        except Exception as e:
+            logging.error(f"Error determining shard capacity: {e}")
+            raise Exception(f"An error occurred: {e}")
+
+    def get_shards_per_index(self) -> List[Dict[str, Any]]:
+        """
+        Count shards per index, so the biggest consumers of the budget are visible.
+
+        Returns:
+            List[Dict[str, Any]]: One entry per index, most shards first.
+        """
+        try:
+            counts: Dict[str, Dict[str, Any]] = {}
+            for shard in self.client.cat.shards(format="json"):
+                entry = counts.setdefault(
+                    shard["index"],
+                    {"index": shard["index"], "shards": 0, "primaries": 0, "replicas": 0, "unassigned": 0},
+                )
+                entry["shards"] += 1
+                if shard.get("prirep") == "p":
+                    entry["primaries"] += 1
+                else:
+                    entry["replicas"] += 1
+                if shard.get("state") == "UNASSIGNED":
+                    entry["unassigned"] += 1
+            return sorted(counts.values(), key=lambda e: (-e["shards"], e["index"]))
+        except Exception as e:
+            logging.error(f"Error counting shards per index: {e}")
+            raise Exception(f"An error occurred: {e}")
+
+    @staticmethod
+    def _disk_state(disk_percent: Any, thresholds: List[Any]) -> Optional[str]:
+        """Classify a node's disk usage against the watermarks: ok/low/high/flood."""
+        try:
+            used = float(disk_percent)
+        except (TypeError, ValueError):
+            return None
+        state = "ok"
+        for level, limit in thresholds:
+            if limit is not None and used >= limit:
+                state = "flood" if level == "flood_stage" else level
+        return state
+
+    def get_node_allocation(self) -> List[Dict[str, Any]]:
+        """
+        Per-node shard counts and disk usage, plus the disk watermarks in force.
+
+        Running out of disk blocks writes just like running out of shard budget
+        does, so both belong in the same picture.
+
+        Returns:
+            List[Dict[str, Any]]: One entry per node (UNASSIGNED row included).
+        """
+        try:
+            rows = self.client.cat.allocation(format="json")
+            watermarks = {
+                level: self._cluster_setting(
+                    f"cluster.routing.allocation.disk.watermark.{level}", default
+                )
+                for level, default in (("low", "85%"), ("high", "90%"), ("flood_stage", "95%"))
+            }
+            thresholds = []
+            for level in ("low", "high", "flood_stage"):
+                try:
+                    thresholds.append((level, float(str(watermarks[level]).rstrip("%"))))
+                except ValueError:
+                    # A watermark can be given as a byte size ("20gb") rather than
+                    # a percentage; in that case we cannot classify on percent.
+                    thresholds.append((level, None))
+
+            for row in rows:
+                row["watermark_low"] = watermarks["low"]
+                row["watermark_high"] = watermarks["high"]
+                row["watermark_flood"] = watermarks["flood_stage"]
+                row["state"] = self._disk_state(row.get("disk.percent"), thresholds)
+            return rows
+        except Exception as e:
+            logging.error(f"Error reading node allocation: {e}")
+            raise Exception(f"An error occurred: {e}")
+
     def reindex(self, source: str, dest: str) -> None:
         """
         Reindex data from a source index to a destination index.

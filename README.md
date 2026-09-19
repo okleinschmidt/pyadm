@@ -226,6 +226,40 @@ pyadm elastic indices
 pyadm elastic indices --limit 10 --output json
 ```
 
+**Shard Capacity:**
+
+A cluster refuses to create new shards once the number of open shards reaches `cluster.max_shards_per_node` times the number of data nodes — the familiar `this cluster currently has [X]/[Y] maximum shards open` error. Unassigned replicas count towards that budget as well. Running out of disk blocks writes in the same way, so `shards` reports both.
+
+```shell
+# Budget, headroom, and disk per node against the watermarks
+pyadm elastic shards
+
+# Which indices consume the budget
+pyadm elastic shards --by-index
+pyadm elastic shards --by-index --limit 0   # all indices
+
+# Machine-readable
+pyadm elastic shards --json
+```
+
+Example output:
+
+```
+Cluster status : yellow
+Shard budget   : 380 / 1000 used (38.0%), 620 remaining
+                 1000 max_shards_per_node x 1 data node(s)
+Shards         : 349 primaries, 31 replicas, 31 unassigned
+
+Disk per node (watermarks: low 85%, high 90%, flood 95%)
+node      shards  used    avail    total    use%    state
+------  --------  ------  -------  -------  ------  -------
+node-1       349  44.8gb  22gb     66.8gb   66%     ok
+
+! 31 unassigned shard(s) still consume budget. Reducing replicas frees it.
+```
+
+Nodes are listed fullest first, and the `state` column classifies each against the watermarks (`ok`/`low`/`high`/`flood`). Notes are collected at the end: one appears once the shard budget passes 80%, or a node reaches the low disk watermark. With `colors = yes` the status values are colourised.
+
 **Index Management:**
 ```shell
 # Get index mappings
@@ -406,6 +440,9 @@ The configuration uses INI format with named contexts per module and an active s
 ### Example Configuration
 
 ```ini
+[GENERAL]
+colors = yes
+
 # Active context per module
 [CONTEXT]
 elastic = prod
@@ -466,6 +503,30 @@ force_ipv4 = true
 ```
 
 ### Configuration Options
+
+**General Settings** (`[GENERAL]` section):
+- `colors` - Colourise status and usage values (true/false, default: false)
+- `warn_percent` - Usage percentage that turns a value yellow (default: 80)
+- `crit_percent` - Usage percentage that turns a value red (default: 90)
+
+With `colors = yes`, two kinds of value are colourised:
+
+- **States** — Elasticsearch cluster health as green/yellow/red, and VM, container and node states as green (running, online), yellow (paused, suspended) or red (stopped, offline). A state pyadm does not recognise is left uncoloured rather than guessed at.
+- **Usage** — anything measured as a share of a maximum: the Elasticsearch shard budget, and CPU, memory and disk on Proxmox. Green below `warn_percent`, yellow from there, red from `crit_percent`.
+
+Both thresholds can also be set in an individual context section to override the global value, as can `colors` itself. Colours are suppressed when the `NO_COLOR` environment variable is set, and dropped automatically when output is piped or redirected, so `--json` and shell pipelines stay clean.
+
+Proxmox list and status commands report memory as `used (NN%)` rather than only the configured maximum, which is what makes the colouring meaningful:
+
+```
+  vmid  name     status    node    cpu    mem              maxmem
+------  -------  --------  ------  -----  ---------------  --------
+   114  k3s-2    running   luna    13.5%  12.31 GB (103%)  12.00 GB
+   111  boxvpn   running   luna    8.0%   4.97 GB (83%)    6.00 GB
+   401  syno     running   gemma   9.1%   1.91 GB (48%)    4.00 GB
+```
+
+A guest can report slightly over 100% because the hypervisor counts its overhead towards the figure; the value is passed through from the API unchanged.
 
 **LDAP Settings:**
 - `server` - LDAP server URL (ldap:// or ldaps://)

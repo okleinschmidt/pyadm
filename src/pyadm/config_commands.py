@@ -92,6 +92,17 @@ def generate_config(output):
     example_config = """
 # pyadm configuration example
 
+# Global settings that are not tied to one module or context
+[GENERAL]
+# Colourise status values (cluster health, VM/container state). Off by default.
+# Can also be set per context section to override this. NO_COLOR is always
+# honoured, and colours are dropped automatically when piping to a file.
+colors = yes
+# Usage percentages at which values turn yellow and red (shard budget, CPU,
+# memory, disk). Defaults: 80 and 90.
+warn_percent = 80
+crit_percent = 90
+
 # Active context per module (used when --context is not set)
 [CONTEXT]
 elastic = prod

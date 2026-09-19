@@ -3,6 +3,7 @@ import click
 import logging
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id, get_task_id
 from pyadm.pvecli.list_utils import sort_items, SortError, render_resource_table
+from pyadm.output import guest_status, usage
 
 
 @pvecli.group("vm", context_settings={'help_option_names': ['-h', '--help']})
@@ -52,7 +53,7 @@ def list_vms(node, status, json_output, output, include_templates, templates, so
             
         if sort:
             try:
-                vms = sort_items(vms, sort, allowed_fields={"id", "vmid", "name", "status", "node"}, field_map={"id": "vmid"})
+                vms = sort_items(vms, sort, allowed_fields={"id", "vmid", "name", "status", "node", "cpu", "mem", "maxmem", "disk", "maxdisk", "uptime"}, field_map={"id": "vmid"})
             except SortError as e:
                 raise click.ClickException(str(e))
 
@@ -60,7 +61,7 @@ def list_vms(node, status, json_output, output, include_templates, templates, so
             click.echo(json.dumps(vms, indent=2))
             return
 
-        click.echo(render_resource_table(vms, ['vmid', 'name', 'status', 'node', 'cpu', 'maxmem'], output=output))
+        click.echo(render_resource_table(vms, ['vmid', 'name', 'status', 'node', 'cpu', 'mem', 'maxmem'], output=output))
 
     except Exception as e:
         logging.error(f"Error listing VMs: {e}")
@@ -89,15 +90,21 @@ def get_vm_status(vmid, node, json_output):
         else:
             # Format and display status
             click.echo(f"VM: {vmid}")
-            click.echo(f"Status: {status.get('status', 'unknown')}")
+            click.echo(f"Status: {guest_status(status.get('status', 'unknown'))}")
             click.echo(f"Node: {node}")
             
             # Display additional details
             if 'cpus' in status:
                 click.echo(f"CPUs: {status['cpus']}")
             if 'maxmem' in status:
-                mem_gb = status['maxmem'] / (1024**3)
-                click.echo(f"Memory: {mem_gb:.2f} GB")
+                max_mem = status['maxmem'] / (1024**3)
+                used = status.get('mem')
+                if isinstance(used, (int, float)) and status['maxmem']:
+                    percent = used / status['maxmem'] * 100
+                    text = f"{used / (1024**3):.2f} GB used of {max_mem:.2f} GB ({percent:.0f}%)"
+                    click.echo(f"Memory: {usage(percent, text)}")
+                else:
+                    click.echo(f"Memory: {max_mem:.2f} GB")
             if 'uptime' in status and status['uptime']:
                 # Format uptime
                 uptime_seconds = status['uptime']
