@@ -54,8 +54,8 @@ def list_nodes(json_output, output, sort):
                         # Convert bytes to GB for memory and disk
                         row.append(f"{value / (1024**3):.2f} GB")
                     elif field == 'cpu' and isinstance(value, (int, float)):
-                        # Format CPU percentage
-                        row.append(f"{value:.1f}%")
+                        # The API reports CPU usage as a 0..1 fraction, not a percentage
+                        row.append(f"{value * 100:.1f}%")
                     else:
                         row.append(str(value))
                 else:
@@ -111,7 +111,7 @@ def get_node_status(node_name, json_output):
             if 'cpu' in status:
                 cpu_val = status['cpu']
                 if isinstance(cpu_val, (int, float)):
-                    click.echo(f"CPU usage: {cpu_val:.2f}%")
+                    click.echo(f"CPU usage: {cpu_val * 100:.2f}%")
                 else:
                     click.echo(f"CPU usage: {cpu_val}")
                 

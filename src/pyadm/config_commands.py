@@ -20,8 +20,8 @@ def config_cli():
         pyadm config edit                          # Edit configuration in default editor
         pyadm config validate                      # Validate configuration syntax
         pyadm config show                          # Display current configuration
-        pyadm config backup                        # Create configuration backup
-        pyadm config test-connections              # Test all configured connections
+        pyadm config get PVE.host                  # Read a single value
+        pyadm config set PVE.host=pve.example.org  # Write a single value
     """
     pass
 
@@ -110,6 +110,10 @@ bind_password = secret
 skip_tls_verify = false
 use_starttls = false
 timeout = 10
+# Where `pyadm ldap groups NAME --create` puts new groups, and which schema to use.
+# Defaults to base_dn and top,groupOfNames.
+group_base_dn = cn=groups,dc=example,dc=org
+group_object_class = top,posixGroup
 
 [LDAP_CONTEXT_staging]
 name = staging

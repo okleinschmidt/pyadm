@@ -28,7 +28,7 @@
 
 ## Installation
 
-To install `pyadm`, use the following command (soon!):
+To install `pyadm`, use the following command:
 
 ```shell
 pip install pyadm-toolkit
@@ -36,7 +36,7 @@ pip install pyadm-toolkit
 
 For development installation:
 ```shell
-git clone <repository-url>
+git clone https://github.com/okleinschmidt/pyadm.git
 cd pyadm
 pip install -e .
 ```
@@ -85,8 +85,10 @@ eval "$(_PYADM_COMPLETE=zsh_source pyadm)"
 
 **Fish:**
 ```shell
-pyadm completion fish > ~/.config/fish/completions/pyadm.fish
+_PYADM_COMPLETE=fish_source pyadm > ~/.config/fish/completions/pyadm.fish
 ```
+
+Completion is generated from the actual command tree, so it always covers every command and option. `pyadm completion <shell>` prints the line to use for your shell.
 
 ## LDAP Module
 
@@ -300,7 +302,6 @@ pyadm pve vm list --node nodename
 pyadm pve vm list --status running
 
 # Filter by name pattern
-pyadm pve vm list --name "*web*"
 ```
 
 **VM Operations:**
@@ -309,10 +310,9 @@ pyadm pve vm list --name "*web*"
 pyadm pve vm status VM_ID
 pyadm pve vm status "web-server-01"
 
-# Start, stop, or restart VMs
+# Start, stop, or shut down VMs
 pyadm pve vm start VM_ID
 pyadm pve vm stop "database-server"
-pyadm pve vm restart 101
 
 # Configure VMs
 pyadm pve vm config 100 --show                    # Show current config
@@ -339,10 +339,9 @@ pyadm pve ct list
 # Filter containers by node
 pyadm pve ct list --node pve-node-01
 
-# Start, stop, or restart containers (works with CT ID or name)
+# Start or stop containers (works with CT ID or name)
 pyadm pve ct start CONTAINER_ID
 pyadm pve ct stop "monitoring-ct"
-pyadm pve ct restart 201
 
 # Migrate containers between nodes
 pyadm pve ct migrate 200 --target node2           # Offline migration
@@ -477,6 +476,10 @@ force_ipv4 = true
 - `use_starttls` - Use STARTTLS for encryption (true/false)
 - `skip_tls_verify` - Skip TLS certificate verification (true/false)
 - `force_ipv4` - Only connect over IPv4 (true/false, see below)
+- `group_base_dn` - Container new groups are created in (default: `base_dn`)
+- `group_object_class` - Object classes for new groups, comma-separated (default: `top,groupOfNames`)
+- `group_gid_min` - Lowest gidNumber to assign when the schema needs one (default: 20000)
+- `user_uid_min` - Lowest uidNumber to assign when cloning a posixAccount (default: 20000)
 
 **Elasticsearch Settings:**
 - `url` - Elasticsearch cluster URL

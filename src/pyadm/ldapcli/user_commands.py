@@ -2,10 +2,17 @@ import click
 import json
 import sys
 import logging
+import secrets
+import string
 import csv as _csv
 from tabulate import tabulate
 from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
 from pyadm.ldapcli.ldap_utils import first_value, stringify_attrs, resolve_group_dn
+
+# Sentinel for "-P was given without a value", so we can prompt instead of
+# taking the password from the command line, where it lands in shell history
+# and in the process list.
+PROMPT_FOR_PASSWORD = "\x00prompt"
 
 
 # Show information about a user
@@ -20,7 +27,8 @@ from pyadm.ldapcli.ldap_utils import first_value, stringify_attrs, resolve_group
 @click.option("--remove-from-group", "-R", default=None, help="Remove user from the specified group (by CN or DN)")
 @click.option("--add-to-groups", default=None, help="Add user to multiple groups (comma-separated)")
 @click.option("--remove-from-groups", default=None, help="Remove user from multiple groups (comma-separated)")
-@click.option("--set-password", "-P", default=None, help="Set password for the user")
+@click.option("--set-password", "-P", is_flag=False, flag_value=PROMPT_FOR_PASSWORD, default=None,
+              help="Set password for the user (pass -P without a value to be prompted)")
 @click.option("--reset-password", is_flag=True, default=None, help="Reset password with random value and show it")
 @click.option("--force-password-change", is_flag=True, default=None, help="Force user to change password at next login")
 @click.option("--enable", is_flag=True, default=None, help="Enable user account")
@@ -149,6 +157,12 @@ def user(username, list_users, json_output, csv, all, attributes, add_to_group, 
         
         # Handle set password
         if set_password:
+            if set_password == PROMPT_FOR_PASSWORD:
+                set_password = click.prompt(
+                    f"New password for '{username}'",
+                    hide_input=True,
+                    confirmation_prompt=True,
+                )
             success = ldap_client.set_user_password(user_dn, set_password)
             if success:
                 click.echo(f"Password for user '{username}' set successfully.")
@@ -158,10 +172,9 @@ def user(username, list_users, json_output, csv, all, attributes, add_to_group, 
             
         # Handle password reset with random password
         if reset_password:
-            import random
-            import string
+            # secrets, not random: a generated password must not be predictable
             chars = string.ascii_letters + string.digits + "!@#$%^&*()"
-            random_password = ''.join(random.choice(chars) for _ in range(16))
+            random_password = ''.join(secrets.choice(chars) for _ in range(16))
             success = ldap_client.set_user_password(user_dn, random_password)
             if success:
                 click.echo(f"Password for user '{username}' reset successfully.")

@@ -6,9 +6,8 @@ from pyadm.config import cluster_config
 def register_context_commands(group, prefix: str, label: str):
     """Register list/current/use commands for a context group."""
 
-    @group.command("list")
+    @group.command("list", help=f"List available {label} contexts.")
     def list_contexts():
-        f"""List available {label} contexts."""
         try:
             contexts = cluster_config.list_contexts(prefix=prefix)
         except RuntimeError as exc:
@@ -23,19 +22,17 @@ def register_context_commands(group, prefix: str, label: str):
         ]
         click.echo(tabulate(rows, headers=["ACTIVE", "CONTEXT", "CONFIG SECTION"], tablefmt="plain"))
 
-    @group.command("current")
+    @group.command("current", help=f"Show the currently active {label} context.")
     def current_context():
-        f"""Show the currently active {label} context."""
         try:
             resolved = cluster_config.resolve_context(prefix=prefix)
         except RuntimeError as exc:
             raise click.ClickException(str(exc)) from exc
         click.echo(f"{resolved['name']} (section: {resolved['section']})")
 
-    @group.command("use")
+    @group.command("use", help=f"Switch active {label} context.")
     @click.argument("context_name")
     def use_context(context_name):
-        f"""Switch active {label} context."""
         try:
             selected = cluster_config.set_active_context(prefix=prefix, name=context_name)
         except RuntimeError as exc:

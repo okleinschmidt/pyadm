@@ -7,6 +7,9 @@ from ldap3.core.exceptions import LDAPException
 from pyadm.net_utils import config_flag, force_ipv4_enabled
 
 class LDAPClient:
+    """
+    Wrapper class for LDAP operations.
+    """
 
     def user_exists(self, username: str) -> bool:
         """
@@ -109,6 +112,227 @@ class LDAPClient:
             logging.error(f"Failed to set user password: {e}")
             return False
 
+    def _rdn_of(self, dn: str) -> str:
+        """Return the leftmost RDN component of a DN."""
+        return ldap3.utils.dn.parse_dn(dn)[0][0] + "=" + ldap3.utils.dn.parse_dn(dn)[0][1]
+
+    def _log_failure(self, action: str) -> None:
+        """Log the server's own explanation for the last failed operation."""
+        result = getattr(self.conn, "result", None) or {}
+        logging.error(
+            f"{action} failed: {result.get('description', 'unknown error')} "
+            f"(code {result.get('result', '?')}) {result.get('message', '')}".strip()
+        )
+
+    def _move_entry(self, dn: str, target_ou: str) -> bool:
+        """Move an entry to another container, keeping its RDN."""
+        try:
+            if not self.conn.modify_dn(dn, self._rdn_of(dn), new_superior=target_ou):
+                self._log_failure(f"Moving '{dn}' to '{target_ou}'")
+                return False
+            return True
+        except Exception as e:
+            logging.error(f"Failed to move '{dn}' to '{target_ou}': {e}")
+            return False
+
+    def move_user(self, user_dn: str, target_ou: str) -> bool:
+        """
+        Move a user entry into another OU/container.
+
+        Args:
+            user_dn (str): Distinguished Name of the user.
+            target_ou (str): DN of the target container.
+
+        Returns:
+            bool: True on success, False otherwise.
+        """
+        return self._move_entry(user_dn, target_ou)
+
+    def move_group(self, group_dn: str, target_ou: str) -> bool:
+        """
+        Move a group entry into another OU/container.
+
+        Args:
+            group_dn (str): Distinguished Name of the group.
+            target_ou (str): DN of the target container.
+
+        Returns:
+            bool: True on success, False otherwise.
+        """
+        return self._move_entry(group_dn, target_ou)
+
+    def rename_group(self, group_dn: str, new_cn: str) -> bool:
+        """
+        Rename a group by changing its CN.
+
+        Args:
+            group_dn (str): Distinguished Name of the group.
+            new_cn (str): New common name.
+
+        Returns:
+            bool: True on success, False otherwise.
+        """
+        try:
+            if not self.conn.modify_dn(group_dn, f"cn={new_cn}"):
+                self._log_failure(f"Renaming '{group_dn}' to '{new_cn}'")
+                return False
+            return True
+        except Exception as e:
+            logging.error(f"Failed to rename '{group_dn}' to '{new_cn}': {e}")
+            return False
+
+    def delete_group(self, group_dn: str) -> bool:
+        """
+        Delete a group entry.
+
+        Args:
+            group_dn (str): Distinguished Name of the group.
+
+        Returns:
+            bool: True on success, False otherwise.
+        """
+        try:
+            if not self.conn.delete(group_dn):
+                self._log_failure(f"Deleting '{group_dn}'")
+                return False
+            return True
+        except Exception as e:
+            logging.error(f"Failed to delete '{group_dn}': {e}")
+            return False
+
+    def _group_container(self) -> str:
+        """Container new groups are created in: 'group_base_dn', else 'base_dn'."""
+        return self.config.get("group_base_dn") or self.config["base_dn"]
+
+    def _group_object_classes(self) -> List[str]:
+        """Object classes for new groups, from 'group_object_class'."""
+        configured = self.config.get("group_object_class")
+        if configured:
+            return [c.strip() for c in configured.split(",") if c.strip()]
+        return ["top", "groupOfNames"]
+
+    def _next_posix_id(self, object_class: str, attribute: str, minimum: int) -> int:
+        """Pick the next free numeric id for schemas that require a unique one."""
+        highest = 0
+        for entry in self.search(f"(objectClass={object_class})", [attribute]):
+            values = entry.entry_attributes_as_dict.get(attribute) or []
+            for value in values:
+                try:
+                    highest = max(highest, int(value))
+                except (TypeError, ValueError):
+                    continue
+        return max(highest + 1, minimum)
+
+    def _next_gid_number(self) -> int:
+        """Pick the next free gidNumber, for schemas where posixGroup requires one."""
+        return self._next_posix_id("posixGroup", "gidNumber", int(self.config.get("group_gid_min", 20000)))
+
+    def _next_uid_number(self) -> int:
+        """Pick the next free uidNumber, for schemas where posixAccount requires one."""
+        return self._next_posix_id("posixAccount", "uidNumber", int(self.config.get("user_uid_min", 20000)))
+
+    def create_group(self, name: str, description: Optional[str] = None) -> bool:
+        """
+        Create a new group.
+
+        The container comes from 'group_base_dn' (falling back to 'base_dn') and the
+        object classes from 'group_object_class' (default: top, groupOfNames). Attributes
+        the chosen schema requires but cannot be guessed are filled in automatically:
+        groupOfNames/groupOfUniqueNames need at least one member, so the bind account is
+        seeded as the initial one, and posixGroup needs a gidNumber, so the next free one
+        is used.
+
+        Args:
+            name (str): Common name of the new group.
+            description (Optional[str]): Optional description.
+
+        Returns:
+            bool: True on success, False otherwise.
+        """
+        object_classes = self._group_object_classes()
+        group_dn = f"cn={name},{self._group_container()}"
+        attributes: Dict[str, Any] = {"cn": name}
+        if description:
+            attributes["description"] = description
+
+        lowered = {c.lower() for c in object_classes}
+        bind_dn = self.conn.user
+        if "groupofnames" in lowered and bind_dn:
+            attributes["member"] = [bind_dn]
+        if "groupofuniquenames" in lowered and bind_dn:
+            attributes["uniqueMember"] = [bind_dn]
+        if "posixgroup" in lowered:
+            attributes["gidNumber"] = self._next_gid_number()
+
+        try:
+            if not self.conn.add(group_dn, object_class=object_classes, attributes=attributes):
+                self._log_failure(f"Creating group '{group_dn}'")
+                return False
+            logging.debug(f"Created group '{group_dn}' with object classes {object_classes}")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to create group '{group_dn}': {e}")
+            return False
+
+    def clone_user(self, user_dn: str, new_username: str) -> bool:
+        """
+        Clone a user entry under a new username in the same container.
+
+        Identity- and state-bearing attributes are not copied: the clone gets its own
+        RDN, and operational attributes the server owns are left for it to assign.
+
+        Args:
+            user_dn (str): Distinguished Name of the user to clone.
+            new_username (str): Username (RDN value) of the new entry.
+
+        Returns:
+            bool: True on success, False otherwise.
+        """
+        source = self.get_attributes(user_dn)
+        if not source:
+            logging.error(f"Cannot clone '{user_dn}': entry not found or unreadable.")
+            return False
+
+        rdn_attr = ldap3.utils.dn.parse_dn(user_dn)[0][0]
+        container = user_dn.split(",", 1)[1] if "," in user_dn else self.config["base_dn"]
+        new_dn = f"{rdn_attr}={new_username},{container}"
+
+        skip = {
+            "objectclass", rdn_attr.lower(), "distinguishedname", "dn",
+            "objectguid", "objectsid", "entryuuid", "entrydn", "entrycsn",
+            "usncreated", "usnchanged", "whencreated", "whenchanged",
+            "createtimestamp", "modifytimestamp", "creatorsname", "modifiersname",
+            "pwdlastset", "lastlogon", "lastlogontimestamp", "logoncount",
+            "badpasswordtime", "badpwdcount", "memberof", "userpassword",
+            "samaccountname", "userprincipalname", "mail", "uidnumber",
+        }
+        attributes: Dict[str, Any] = {}
+        for key, values in source.items():
+            if key.lower() in skip or not values:
+                continue
+            attributes[key] = values
+        attributes[rdn_attr] = new_username
+
+        object_classes = [str(v) for v in (source.get("objectClass") or [])]
+        if not object_classes:
+            logging.error(f"Cannot clone '{user_dn}': source entry has no readable objectClass.")
+            return False
+
+        # uidNumber is skipped above because it must be unique, but posixAccount
+        # requires one - so the clone gets the next free id rather than the source's.
+        if any(c.lower() == "posixaccount" for c in object_classes):
+            attributes["uidNumber"] = self._next_uid_number()
+
+        try:
+            if not self.conn.add(new_dn, object_class=object_classes, attributes=attributes):
+                self._log_failure(f"Cloning '{user_dn}' to '{new_dn}'")
+                return False
+            logging.debug(f"Cloned '{user_dn}' to '{new_dn}'")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to clone '{user_dn}' to '{new_dn}': {e}")
+            return False
+
     def is_connected(self) -> bool:
         """
         Check if the LDAP connection is alive.
@@ -160,9 +384,7 @@ class LDAPClient:
         except Exception as e:
             logging.error(f"Failed to set attributes for {dn}: {e}")
             return False
-    """
-    Wrapper class for LDAP operations.
-    """
+
     def __init__(self, config: Dict[str, Any], password: Optional[str] = None) -> None:
         """
         Initialize the LDAP connection using the given config.

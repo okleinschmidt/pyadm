@@ -77,13 +77,17 @@ def render_resource_table(items, default_fields, output=None, mem_unit="GB"):
         row = []
         for field in fields:
             if field in item:
-                if field == 'maxmem' and isinstance(item[field], int):
+                value = item[field]
+                if field == 'maxmem' and isinstance(value, int):
                     if mem_unit == "MB":
-                        row.append(f"{item[field] / (1024**2):.0f} MB")
+                        row.append(f"{value / (1024**2):.0f} MB")
                     else:
-                        row.append(f"{item[field] / (1024**3):.2f} GB")
+                        row.append(f"{value / (1024**3):.2f} GB")
+                elif field == 'cpu' and isinstance(value, (int, float)):
+                    # The API reports CPU usage as a 0..1 fraction, not a percentage
+                    row.append(f"{value * 100:.1f}%")
                 else:
-                    row.append(item[field])
+                    row.append(value)
             else:
                 row.append("")
         table_data.append(row)

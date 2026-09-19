@@ -27,16 +27,47 @@ def pvecli(context, debug, dry_run, offline):
     selected_pve["offline"] = offline
 
 
+class DryRunPVEClient:
+    """
+    Wraps a client so reads pass through untouched while writes are only announced.
+
+    Read-only commands stay fully usable under --dry-run; every mutating call is
+    reported instead of sent. Intercepting here rather than in each command means
+    a newly added write operation is covered automatically.
+    """
+
+    MUTATING_PREFIXES = (
+        "start_", "stop_", "shutdown_", "reboot_", "delete_", "destroy_",
+        "unlock_", "create_", "clone_", "migrate_", "set_", "apply_", "update_",
+    )
+
+    def __init__(self, client):
+        self._client = client
+
+    def __getattr__(self, name):
+        attribute = getattr(self._client, name)
+        if not callable(attribute) or not name.startswith(self.MUTATING_PREFIXES):
+            return attribute
+
+        def announce(*args, **kwargs):
+            arguments = [repr(a) for a in args]
+            arguments += [f"{k}={v!r}" for k, v in kwargs.items()]
+            click.echo(f"DRY-RUN: would call {name}({', '.join(arguments)})")
+            return {"data": "DRY-RUN (nothing was sent)"}
+
+        return announce
+
+
 def get_pve_client() -> Optional[PVEClient]:
     """Get a PVE client instance based on configuration."""
-    if selected_pve["dry_run"]:
-        click.echo("DRY-RUN mode: Would connect to Proxmox VE server")
-        return None
-        
     if selected_pve["offline"]:
         from pyadm.pvecli.offline_client import OfflinePVEClient
         click.echo("OFFLINE mode: Using sample data")
-        return OfflinePVEClient()
+        offline_client = OfflinePVEClient()
+        if selected_pve["dry_run"]:
+            click.echo("DRY-RUN mode: reads are live, writes are only reported")
+            return DryRunPVEClient(offline_client)
+        return offline_client
         
     # Get configuration path
     config_path = os.path.expanduser("~/.config/pyadm/pyadm.conf")
@@ -75,7 +106,11 @@ def get_pve_client() -> Optional[PVEClient]:
         if selected_pve["debug"]:
             logging.basicConfig(level=logging.DEBUG)
             
-        return PVEClient(cfg, debug=selected_pve["debug"])
+        client = PVEClient(cfg, debug=selected_pve["debug"])
+        if selected_pve["dry_run"]:
+            click.echo("DRY-RUN mode: reads are live, writes are only reported")
+            return DryRunPVEClient(client)
+        return client
     except Exception as e:
         if isinstance(e, RuntimeError):
             raise click.ClickException(str(e)) from e

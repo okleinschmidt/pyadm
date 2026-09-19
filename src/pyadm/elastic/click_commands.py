@@ -18,6 +18,20 @@ defaults = {
 }
 
 
+def match_indices(all_indices, pattern: str):
+    """
+    Return the indices matching *pattern*.
+
+    A pattern is only treated as a wildcard if it actually contains one. An exact
+    name matches that one index and nothing else - silently widening "logs" into
+    "logs*" would also hit "logs-prod".
+    """
+    if '*' not in pattern:
+        return [idx for idx in all_indices if idx['index'] == pattern]
+    regex = '^' + re.escape(pattern).replace(r'\*', '.*') + '$'
+    return [idx for idx in all_indices if re.match(regex, idx['index'])]
+
+
 def parse_json_arg(value: str, label: str = "JSON"):
     """Parse a JSON string argument, raising ClickException on failure."""
     try:
@@ -28,11 +42,6 @@ def parse_json_arg(value: str, label: str = "JSON"):
 
 # Holds the selected context name
 selected_context = {"name": None}
-
-def prompt_password_if_needed(ctx, param, value):
-    if value:  # `-p` was provided without an argument
-        return click.prompt("Specify the password for authentication", hide_input=True)
-    return None  # Default value, if `-p` was not provided at all.
 
 # define click commands
 @click.group("elastic", context_settings={'help_option_names': ['-h', '--help']})
@@ -47,9 +56,9 @@ def elastic(context):
     Examples:
         pyadm elastic info                          # Show cluster information
         pyadm elastic indices                       # List all indices
-        pyadm elastic indices --size               # Show indices with sizes
-        pyadm elastic search "error" --index logs  # Search for "error" in logs index
-        pyadm elastic nodes                        # Show cluster nodes
+        pyadm elastic indices --limit 20            # List the first 20 indices
+        pyadm elastic search logs -q '{"match_all":{}}'   # Search the logs index
+        pyadm elastic aliases                       # Show index aliases
         pyadm elastic health                       # Check cluster health
         
     \b
@@ -115,7 +124,7 @@ def create_index(index, body):
         pyadm elastic create-index my-logs
         pyadm elastic create-index users --body '{"settings":{"number_of_shards":3}}'
     """
-    body_dict = json.loads(body) if body else None
+    body_dict = parse_json_arg(body, "index body") if body else None
     success = get_es().create_index(index, body_dict)
     if success:
         print(f"Index '{index}' created.")
@@ -234,11 +243,9 @@ def indices(limit, output):
     if not data:
         print("No indices found.")
         return
-    header = data[0].keys()
-    rows =  [x.values() for x in data]
     # Apply the limit if provided
     if limit:
-        data = list(reversed(data))[:limit]
+        data = data[:limit]
 
     if output == "json":
         print(json.dumps(data, indent=4))
@@ -267,20 +274,17 @@ def reindex(index, suffix, force):
         pyadm elastic reindex --index "users*" --force               # Skip confirmations
     """
     try:
-        if suffix:
-            suffix = suffix
-        indices = get_es().list_indices()
-        if not index.endswith('*'):
-            index += '*'
-        pattern = '^' + index.replace("*", ".*") + '$'
-        for idx in indices:
-            if re.match(pattern, idx['index']):
-                new_index_name = f"{idx['index']}-{suffix}"
-                if not force:
-                    if not click.confirm(f"Do you really want to reindex from {idx['index']} to {new_index_name}?"):
-                        continue  # Skip to next iteration if user says 'no'
-                print(f"Reindexing {idx['index']} to {new_index_name}.")
-                get_es().reindex(idx['index'], new_index_name)
+        matches = match_indices(get_es().list_indices(), index)
+        if not matches:
+            click.echo(f"No index matches '{index}'. Nothing to reindex.")
+            return
+        for idx in matches:
+            new_index_name = f"{idx['index']}-{suffix}"
+            if not force:
+                if not click.confirm(f"Do you really want to reindex from {idx['index']} to {new_index_name}?"):
+                    continue  # Skip to next iteration if user says 'no'
+            print(f"Reindexing {idx['index']} to {new_index_name}.")
+            get_es().reindex(idx['index'], new_index_name)
     except click.ClickException as e:
         raise e
     except Exception as e:
@@ -289,9 +293,10 @@ def reindex(index, suffix, force):
 
 
 @elastic.command("delete")
-@click.option('--index', '-i', help='Index name or pattern to delete')
+@click.option('--index', '-i', required=True, help='Index name or pattern to delete')
 @click.option('--force', '-f', is_flag=True, help='Force deletion without confirmation')
-def delete(index, force):
+@click.option('--dry-run', is_flag=True, help='Show which indices would be deleted, delete nothing')
+def delete(index, force, dry_run):
     """Delete one or more indices permanently.
     
     ⚠️  WARNING: This operation is irreversible and will permanently delete data!
@@ -301,24 +306,31 @@ def delete(index, force):
     
     \b
     Examples:
-        pyadm elastic delete --index "old-logs"           # Delete single index
+        pyadm elastic delete --index "old-logs"           # Delete exactly that index
         pyadm elastic delete --index "temp-*"             # Delete all temp indices
-        pyadm elastic delete --index "logs-2022*" --force # Force delete without prompt
+        pyadm elastic delete --index "logs-2022*" --dry-run # Show what would go
     """
-    try:    
-        indices = get_es().list_indices()
-        if not index.endswith('*'):
-            index += '*'
-        pattern = '^' + index.replace("*", ".*") + '$'  
-        for idx in indices:
-            if re.match(pattern, idx['index']):
-                if not force:
-                    if not click.confirm(f"Do you really want to delete index {idx['index']} with {idx['uuid']}?"):
-                        continue  # Skip to next iteration if user says 'no'
-                if get_es().delete_index(idx['index']):
-                    print(f"Index {idx['index']} with {idx['uuid']} deleted.")
-                else:
-                    print(f"Index {idx['index']} with {idx['uuid']} not deleted.")
+    try:
+        matches = match_indices(get_es().list_indices(), index)
+        if not matches:
+            click.echo(f"No index matches '{index}'. Nothing to delete.")
+            return
+
+        click.echo(f"{len(matches)} index/indices match '{index}':")
+        for idx in matches:
+            click.echo(f"  {idx['index']}")
+        if dry_run:
+            click.echo("DRY-RUN: nothing was deleted.")
+            return
+
+        for idx in matches:
+            if not force:
+                if not click.confirm(f"Do you really want to delete index {idx['index']} with {idx['uuid']}?"):
+                    continue  # Skip to next iteration if user says 'no'
+            if get_es().delete_index(idx['index']):
+                print(f"Index {idx['index']} with {idx['uuid']} deleted.")
+            else:
+                print(f"Index {idx['index']} with {idx['uuid']} not deleted.")
     except click.ClickException as e:
         raise e
     except Exception as e:
