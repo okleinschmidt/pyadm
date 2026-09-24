@@ -1,7 +1,7 @@
 import click
 import json
 import logging
-from tabulate import tabulate
+from pyadm.table import echo_table
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve
 from pyadm.pvecli.list_utils import sort_items, SortError
 
@@ -71,7 +71,7 @@ def list_interfaces(node, type, active, json_output, output, sort):
             table_data.append(row)
         
         # Print table
-        click.echo(tabulate(table_data, headers=fields))
+        echo_table(table_data, fields, empty="No network interfaces found.")
         
     except Exception as e:
         logging.error(f"Error listing network interfaces: {e}")
@@ -114,7 +114,7 @@ def list_bridges(node, json_output):
             table_data.append(row)
         
         # Print table
-        click.echo(tabulate(table_data, headers=fields))
+        echo_table(table_data, fields, empty="No network bridges found.")
         
     except Exception as e:
         logging.error(f"Error listing network bridges: {e}")

@@ -128,6 +128,38 @@ class OfflinePVEClient:
         """Simulate unlocking a container."""
         pass
     
+    def get_vm_snapshots(self, node: str, vmid: int) -> List[Dict[str, Any]]:
+        """Get sample snapshot data: one VM with a branch, one stale, one without."""
+        now = int(datetime.now().timestamp())
+        if vmid == 100:
+            return [
+                {'name': 'base-install', 'snaptime': now - 30 * 86400, 'description': 'Fresh install',
+                 'parent': None},
+                {'name': 'before-upgrade', 'snaptime': now - 7 * 86400, 'description': 'Before dist-upgrade',
+                 'parent': 'base-install', 'vmstate': 1},
+                {'name': 'after-upgrade', 'snaptime': now - 6 * 86400, 'description': 'Upgrade went fine',
+                 'parent': 'before-upgrade'},
+                {'name': 'kernel-test', 'snaptime': now - 2 * 86400, 'description': 'Testing 6.8 kernel',
+                 'parent': 'before-upgrade'},
+                {'name': 'current', 'description': 'You are here!', 'parent': 'after-upgrade'},
+            ]
+        if vmid == 102:
+            return [
+                {'name': 'quick-test', 'snaptime': now - 400 * 86400, 'description': 'Just for a minute...',
+                 'parent': None},
+                {'name': 'current', 'parent': 'quick-test'},
+            ]
+        return [{'name': 'current'}]
+
+    def create_vm_snapshot(self, node: str, vmid: int, name: str,
+                           description: Optional[str] = None, vmstate: bool = False) -> Dict[str, Any]:
+        """Simulate creating a VM snapshot."""
+        return {'data': f'UPID:{node}:{datetime.now().strftime("%Y%m%d")}:qmsnapshot:{vmid}:{name}'}
+
+    def delete_vm_snapshot(self, node: str, vmid: int, name: str, force: bool = False) -> Dict[str, Any]:
+        """Simulate deleting a VM snapshot."""
+        return {'data': f'UPID:{node}:{datetime.now().strftime("%Y%m%d")}:qmdelsnapshot:{vmid}:{name}'}
+
     def get_containers(self, node: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get sample container data."""
         all_containers = [
@@ -158,6 +190,26 @@ class OfflinePVEClient:
             return [ct for ct in all_containers if ct['node'] == node]
         return all_containers
     
+    def get_container_snapshots(self, node: str, vmid: int) -> List[Dict[str, Any]]:
+        """Get sample snapshot data for a container."""
+        now = int(datetime.now().timestamp())
+        if vmid == 201:
+            return [
+                {'name': 'pre-migration', 'snaptime': now - 120 * 86400, 'description': 'Before moving to node2',
+                 'parent': None},
+                {'name': 'current', 'parent': 'pre-migration'},
+            ]
+        return [{'name': 'current'}]
+
+    def create_container_snapshot(self, node: str, vmid: int, name: str,
+                                  description: Optional[str] = None) -> Dict[str, Any]:
+        """Simulate creating a container snapshot."""
+        return {'data': f'UPID:{node}:{datetime.now().strftime("%Y%m%d")}:vzsnapshot:{vmid}:{name}'}
+
+    def delete_container_snapshot(self, node: str, vmid: int, name: str, force: bool = False) -> Dict[str, Any]:
+        """Simulate deleting a container snapshot."""
+        return {'data': f'UPID:{node}:{datetime.now().strftime("%Y%m%d")}:vzdelsnapshot:{vmid}:{name}'}
+
     def get_container_status(self, node: str, vmid: int) -> Dict[str, Any]:
         """Get sample container status."""
         # Find the container in our sample data

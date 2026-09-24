@@ -5,7 +5,7 @@ import logging
 import secrets
 import string
 import csv as _csv
-from tabulate import tabulate
+from pyadm.table import echo_table
 from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
 from pyadm.ldapcli.ldap_utils import first_value, stringify_attrs, resolve_group_dn
 
@@ -136,7 +136,7 @@ def user(username, list_users, json_output, csv, all, attributes, add_to_group, 
                 mail = first_value(attrs_dict, "mail")
                 display_name = first_value(attrs_dict, "displayName")
                 table_data.append([uid or "", cn or "", mail or "", display_name or ""])
-            click.echo(tabulate(table_data, headers=fields))
+            echo_table(table_data, fields, empty="No users found.")
             return
 
         if not username:

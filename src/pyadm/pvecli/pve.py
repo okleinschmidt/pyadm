@@ -1100,6 +1100,129 @@ class PVEClient:
             self.logger.error(f"Error migrating container {vmid} from node '{node}': {e}")
             raise
 
+    def get_vm_snapshots(self, node: str, vmid: int) -> List[Dict[str, Any]]:
+        """
+        Get the snapshots of a VM.
+
+        Args:
+            node: Node name
+            vmid: VM ID
+
+        Returns:
+            List of snapshot dictionaries, including the 'current' pseudo-snapshot
+        """
+        try:
+            return self.api.nodes(node).qemu(vmid).snapshot.get()
+        except Exception as e:
+            self.logger.error(f"Error getting snapshots for VM {vmid} on node '{node}': {e}")
+            raise
+
+    def create_vm_snapshot(self, node: str, vmid: int, name: str,
+                           description: Optional[str] = None, vmstate: bool = False) -> Dict[str, Any]:
+        """
+        Create a snapshot of a VM.
+
+        Args:
+            node: Node name
+            vmid: VM ID
+            name: Snapshot name
+            description: Optional description stored with the snapshot
+            vmstate: Also save the memory state of a running VM
+
+        Returns:
+            Task result dictionary
+        """
+        params: Dict[str, Any] = {'snapname': name}
+        if description:
+            params['description'] = description
+        if vmstate:
+            params['vmstate'] = 1
+        try:
+            return self.api.nodes(node).qemu(vmid).snapshot.post(**params)
+        except Exception as e:
+            self.logger.error(f"Error creating snapshot '{name}' of VM {vmid} on node '{node}': {e}")
+            raise
+
+    def delete_vm_snapshot(self, node: str, vmid: int, name: str, force: bool = False) -> Dict[str, Any]:
+        """
+        Delete a snapshot of a VM.
+
+        Args:
+            node: Node name
+            vmid: VM ID
+            name: Snapshot name
+            force: Remove the snapshot from the config even if its removal fails
+
+        Returns:
+            Task result dictionary
+        """
+        params = {'force': 1} if force else {}
+        try:
+            return self.api.nodes(node).qemu(vmid).snapshot(name).delete(**params)
+        except Exception as e:
+            self.logger.error(f"Error deleting snapshot '{name}' of VM {vmid} on node '{node}': {e}")
+            raise
+
+    def get_container_snapshots(self, node: str, vmid: int) -> List[Dict[str, Any]]:
+        """
+        Get the snapshots of a container.
+
+        Args:
+            node: Node name
+            vmid: Container ID
+
+        Returns:
+            List of snapshot dictionaries, including the 'current' pseudo-snapshot
+        """
+        try:
+            return self.api.nodes(node).lxc(vmid).snapshot.get()
+        except Exception as e:
+            self.logger.error(f"Error getting snapshots for container {vmid} on node '{node}': {e}")
+            raise
+
+    def create_container_snapshot(self, node: str, vmid: int, name: str,
+                                  description: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Create a snapshot of a container.
+
+        Args:
+            node: Node name
+            vmid: Container ID
+            name: Snapshot name
+            description: Optional description stored with the snapshot
+
+        Returns:
+            Task result dictionary
+        """
+        params: Dict[str, Any] = {'snapname': name}
+        if description:
+            params['description'] = description
+        try:
+            return self.api.nodes(node).lxc(vmid).snapshot.post(**params)
+        except Exception as e:
+            self.logger.error(f"Error creating snapshot '{name}' of container {vmid} on node '{node}': {e}")
+            raise
+
+    def delete_container_snapshot(self, node: str, vmid: int, name: str, force: bool = False) -> Dict[str, Any]:
+        """
+        Delete a snapshot of a container.
+
+        Args:
+            node: Node name
+            vmid: Container ID
+            name: Snapshot name
+            force: Remove the snapshot from the config even if its removal fails
+
+        Returns:
+            Task result dictionary
+        """
+        params = {'force': 1} if force else {}
+        try:
+            return self.api.nodes(node).lxc(vmid).snapshot(name).delete(**params)
+        except Exception as e:
+            self.logger.error(f"Error deleting snapshot '{name}' of container {vmid} on node '{node}': {e}")
+            raise
+
     def get_vm_config(self, node: str, vmid: int) -> Dict[str, Any]:
         """
         Get VM configuration.

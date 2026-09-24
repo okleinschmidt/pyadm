@@ -18,7 +18,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-keywords = ["python admin toolkit", "pyadm", "ldap", "activedirectory", "directoryserver", "elasticsearch", "opensearch", "proxmox", "pve"]
+keywords = ["python admin toolkit", "pyadm", "ldap", "activedirectory", "directoryserver", "elasticsearch", "opensearch", "proxmox", "pve", "kimai", "time tracking", "uptime kuma", "monitoring"]
 license = { file = 'LICENSE' }
 scripts = { pyadm = 'pyadm.main:cli' }
 dependencies = [
@@ -27,7 +27,9 @@ dependencies = [
     "elasticsearch",
     "opensearch-py",
     "tabulate",
-    "proxmoxer"
+    "proxmoxer",
+    "requests",
+    "uptime-kuma-api"
 ]
 
 [project.urls]

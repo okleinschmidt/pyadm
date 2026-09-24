@@ -8,8 +8,10 @@ class ClusterConfig:
 
     MODULE_KEYS = {
         "ELASTIC": "elastic",
+        "KIMAI": "kimai",
         "LDAP": "ldap",
         "PVE": "pve",
+        "UPTIME": "uptime",
     }
 
     def __init__(self, config_file: Optional[Path] = None):

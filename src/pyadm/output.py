@@ -38,6 +38,24 @@ DEFAULT_CRIT_PERCENT = 90.0
 _warn_percent = DEFAULT_WARN_PERCENT
 _crit_percent = DEFAULT_CRIT_PERCENT
 
+# Ages at which a snapshot stops looking routine and starts looking forgotten.
+DEFAULT_WARN_DAYS = 7.0
+DEFAULT_CRIT_DAYS = 30.0
+
+_warn_days = DEFAULT_WARN_DAYS
+_crit_days = DEFAULT_CRIT_DAYS
+
+# Uptime Kuma heartbeat states. "maintenance" is a planned outage, so it is
+# blue rather than red: nothing is wrong with the service.
+MONITOR_STATUS_COLORS = {
+    "up": "green",
+    "down": "red",
+    "pending": "yellow",
+    "maintenance": "blue",
+    "active": "green",
+    "paused": "yellow",
+}
+
 DISK_STATE_COLORS = {
     "ok": "green",
     "low": "yellow",
@@ -46,7 +64,7 @@ DISK_STATE_COLORS = {
 }
 
 
-def _read_percent(config: Optional[Mapping[str, Any]], key: str, fallback: float) -> float:
+def _read_number(config: Optional[Mapping[str, Any]], key: str, fallback: float) -> float:
     """Read a threshold from the context section, else [GENERAL], else the default."""
     for source in (config, _general_section()):
         if not source:
@@ -81,10 +99,12 @@ def init_colors(config: Optional[Mapping[str, Any]] = None) -> bool:
     Returns:
         True if colouring is enabled
     """
-    global _colors_enabled, _warn_percent, _crit_percent
+    global _colors_enabled, _warn_percent, _crit_percent, _warn_days, _crit_days
 
-    _warn_percent = _read_percent(config, "warn_percent", DEFAULT_WARN_PERCENT)
-    _crit_percent = _read_percent(config, "crit_percent", DEFAULT_CRIT_PERCENT)
+    _warn_percent = _read_number(config, "warn_percent", DEFAULT_WARN_PERCENT)
+    _crit_percent = _read_number(config, "crit_percent", DEFAULT_CRIT_PERCENT)
+    _warn_days = _read_number(config, "warn_days", DEFAULT_WARN_DAYS)
+    _crit_days = _read_number(config, "crit_days", DEFAULT_CRIT_DAYS)
 
     if os.environ.get("NO_COLOR"):
         _colors_enabled = False
@@ -127,6 +147,11 @@ def guest_status(value: Any) -> str:
     return _styled_by_map(value, GUEST_STATUS_COLORS)
 
 
+def monitor_status(value: Any) -> str:
+    """Colour an Uptime Kuma monitor state (up/down/pending/maintenance)."""
+    return _styled_by_map(value, MONITOR_STATUS_COLORS)
+
+
 def disk_state(value: Any) -> str:
     """Colour a disk watermark state (ok/low/high/flood)."""
     return _styled_by_map(value, DISK_STATE_COLORS)
@@ -151,6 +176,27 @@ def usage(percent: Any, text: Optional[str] = None) -> str:
         return text if text is not None else ""
     rendered = text if text is not None else f"{float(percent):.1f}%"
     return style(rendered, usage_color(percent))
+
+
+def age_color(days: Any) -> Optional[str]:
+    """Colour for an age in days: unremarkable, then yellow, then red."""
+    try:
+        value = float(days)
+    except (TypeError, ValueError):
+        return None
+    if value >= _crit_days:
+        return "red"
+    if value >= _warn_days:
+        return "yellow"
+    return None
+
+
+def age(days: Any, text: Optional[str] = None) -> str:
+    """Render an age in days (or *text*) coloured by how stale it is."""
+    if days is None:
+        return text if text is not None else ""
+    rendered = text if text is not None else f"{float(days):.0f}d"
+    return style(rendered, age_color(days))
 
 
 def thresholds() -> tuple:

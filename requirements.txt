@@ -5,3 +5,5 @@ elasticsearch
 opensearch-py
 tabulate
 proxmoxer
+requests
+uptime-kuma-api

@@ -3,7 +3,7 @@ import json
 import sys
 import logging
 import csv as _csv
-from tabulate import tabulate
+from pyadm.table import echo_table
 from pyadm.ldapcli.click_commands import ldapcli, get_ldap_client
 from pyadm.ldapcli.ldap_utils import first_value, stringify_attrs, resolve_user_dn
 
@@ -145,7 +145,7 @@ def groups(name, json_output, csv, all, attributes, list_groups, create, delete,
                 if not cn:
                     cn = entry.entry_dn
                 table_data.append([cn, desc, member_count, managed_by])
-            click.echo(tabulate(table_data, headers=fields))
+            echo_table(table_data, fields, empty="No groups found.")
             return
 
         if not name:

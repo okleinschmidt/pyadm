@@ -1,6 +1,6 @@
 import click
-from tabulate import tabulate
 from pyadm.config import cluster_config
+from pyadm.table import echo_table
 
 
 def register_context_commands(group, prefix: str, label: str):
@@ -12,15 +12,12 @@ def register_context_commands(group, prefix: str, label: str):
             contexts = cluster_config.list_contexts(prefix=prefix)
         except RuntimeError as exc:
             raise click.ClickException(str(exc)) from exc
-        if not contexts:
-            click.echo(f"No {label} contexts found.")
-            return
         active = cluster_config.get_active_context(prefix=prefix)
         rows = [
             ["*" if active and e["name"].lower() == active.lower() else "", e["name"], e["section"]]
             for e in contexts
         ]
-        click.echo(tabulate(rows, headers=["ACTIVE", "CONTEXT", "CONFIG SECTION"], tablefmt="plain"))
+        echo_table(rows, ["active", "context", "section"], empty=f"No {label} contexts found.")
 
     @group.command("current", help=f"Show the currently active {label} context.")
     def current_context():

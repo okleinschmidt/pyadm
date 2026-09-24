@@ -63,8 +63,10 @@ class LazyGroup(click.Group):
     lazy_subcommands={
         "config": "pyadm.config_commands:config_cli",
         "elastic": "pyadm.elastic.click_commands:elastic",
+        "kimai": "pyadm.kimaicli.click_commands:kimaicli",
         "ldap": "pyadm.ldapcli.click_commands:ldapcli",
         "pve": "pyadm.pvecli.pve_commands:pvecli",
+        "uptime": "pyadm.uptimecli.click_commands:uptimecli",
     },
     context_settings={'help_option_names': ['-h', '--help']},
 )
@@ -73,7 +75,7 @@ def cli(debug):
     """pyadm - Swiss Army Knife for Engineers and Administrators
 
     This tool provides modular functionality to perform various tasks efficiently.
-    Currently, the available modules are 'ldap', 'elastic', and 'pve'.
+    Currently, the available modules are 'ldap', 'elastic', 'pve', 'kimai' and 'uptime'.
 
     Usage: pyadm <module> SUBCOMMAND [OPTIONS]
 
@@ -87,6 +89,10 @@ def cli(debug):
         pyadm elastic indices            # List all indices in the elastic cluster
         pyadm pve vm list                # List all VMs on Proxmox VE
         pyadm pve ct start mycontainer   # Start a container by name
+        pyadm kimai timesheet list       # Show recent Kimai timesheet entries
+        pyadm kimai book -p 1 -a 2 -b 09:00 -d 3h  # Book a block of time
+        pyadm uptime monitor list         # List Uptime Kuma monitors
+        pyadm uptime downtime -m web -d 2h  # Silence a monitor for two hours
     """
     # Configure logging level based on debug flag
     if debug:

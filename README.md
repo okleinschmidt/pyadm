@@ -6,6 +6,8 @@
 - **LDAP** - for LDAP/Active Directory operations with advanced user and group management
 - **Elastic** - for Elasticsearch/OpenSearch operations with multi-cluster support
 - **PVE** - for Proxmox Virtual Environment management with offline capabilities
+- **Kimai** - for Kimai time tracking, including recurring bookings
+- **Uptime Kuma** - for monitors and scheduled downtimes
 - **Config** - for configuration management and validation
 
 ## Features
@@ -55,6 +57,8 @@ pyadm [--debug] MODULE SUBCOMMAND [OPTIONS]
 - `ldap` - For LDAP/Active Directory operations
 - `elastic` - For Elasticsearch/OpenSearch operations  
 - `pve` - For Proxmox Virtual Environment management
+- `kimai` - For Kimai time tracking
+- `uptime` - For Uptime Kuma monitors and maintenance windows
 - `config` - For configuration management
 
 To see all available commands and modules:
@@ -222,8 +226,10 @@ pyadm elastic health
 # List all indices
 pyadm elastic indices
 
-# List indices with formatting options
-pyadm elastic indices --limit 10 --output json
+# Limit the rows, pick the columns, or get raw JSON
+pyadm elastic indices --limit 10
+pyadm elastic indices -o index,docs.count,store.size
+pyadm elastic indices --json
 ```
 
 **Shard Capacity:**
@@ -363,6 +369,69 @@ pyadm pve vm migrate 100 --target node2 --online     # Live migration
 pyadm pve vm migrate 100 --target node2 --with-local-disks  # Include local storage
 ```
 
+**Snapshots:**
+```shell
+# Cluster-wide overview: every VM that has snapshots, oldest first
+pyadm pve vm snapshots list
+pyadm pve vm list-snapshots                    # Shortcut for the same command
+
+# Only VMs whose newest snapshot is older than 30 days
+pyadm pve vm snapshots list --older-than 30
+
+# Restrict to one node, or show the full tree of every matching VM
+pyadm pve vm snapshots list --node pve-node-01
+pyadm pve vm snapshots list --tree
+
+# Sort the overview (default: oldest snapshot first)
+pyadm pve vm snapshots list --sort -snaps
+pyadm pve vm snapshots list --sort name
+
+# Snapshots of a single VM, as a tree
+pyadm pve vm snapshots list 100
+pyadm pve vm snapshots list web-server --json
+
+# Create a snapshot (--vmstate also saves the memory of a running VM)
+pyadm pve vm snapshots create 100 before-upgrade
+pyadm pve vm snapshots create web-server before-upgrade -d "Ticket 4711"
+pyadm pve vm snapshots create 100 hotfix --vmstate
+
+# Delete snapshots (asks for confirmation unless --yes is given)
+pyadm pve vm snapshots delete 100 kernel-test
+pyadm pve vm snapshots delete web-server old-1 old-2 --yes
+```
+
+Deleting a snapshot leaves the running VM untouched and its child snapshots
+intact — they are re-attached to the parent of the deleted one.
+
+Without a VM ID every VM in the cluster is scanned and the ones that have
+snapshots are listed, so forgotten snapshots become visible at a glance. VMs
+without snapshots are left out. Ages older than 7 days are highlighted, older
+than 30 days more strongly (see `warn_days` / `crit_days` below); the `ram`
+column marks VMs whose snapshots also captured the memory state, which makes
+them considerably more expensive to keep around.
+
+```text
+  vmid  name        node    status      snaps  oldest    newest    ram    snapshot names
+------  ----------  ------  --------  -------  --------  --------  -----  --------------------------------------
+   102  sample-vm3  node2   running         1  400d 0h   400d 0h          quick-test
+   100  sample-vm1  node1   running         4  30d 0h    2d 0h     yes    base-install, before-upgrade, after-...
+```
+
+With a VM ID the snapshots of that VM are drawn as a tree, since every snapshot
+descends from the one that was active when it was taken. The
+`NOW (current state)` entry marks where the VM currently sits, which makes
+abandoned branches obvious — `kernel-test` below was never returned to.
+
+```text
+name                          created           age     ram    description
+----------------------------  ----------------  ------  -----  -------------------
+base-install                  2026-08-21 08:35  30d 0h         Fresh install
+└─ before-upgrade             2026-09-13 08:35  7d 0h   yes    Before dist-upgrade
+   ├─ after-upgrade           2026-09-14 08:35  6d 0h          Upgrade went fine
+   │  └─ NOW (current state)                                   You are here!
+   └─ kernel-test             2026-09-18 08:35  2d 0h          Testing 6.8 kernel
+```
+
 ### Container Management
 
 **Container Operations:**
@@ -383,6 +452,26 @@ pyadm pve ct migrate web-ct --target node2        # Migrate by name
 pyadm pve ct migrate 200 --target node2 --online  # Online migration
 pyadm pve ct migrate 200 --target node2 --restart # Restart after migration
 ```
+
+**Container Snapshots:**
+```shell
+# Cluster-wide overview: every container that has snapshots, oldest first
+pyadm pve ct snapshots list
+pyadm pve ct list-snapshots                    # Shortcut for the same command
+
+# Same filters as for VMs
+pyadm pve ct snapshots list --older-than 30
+pyadm pve ct snapshots list --node pve-node-01 --tree
+pyadm pve ct snapshots list 200                # Tree of a single container
+
+# Create and delete
+pyadm pve ct snapshots create 200 before-upgrade -d "Ticket 4711"
+pyadm pve ct snapshots delete 200 old-1 old-2 --yes
+```
+
+Containers work exactly like VMs here, with one difference: an LXC snapshot
+never contains a memory state, so there is no `--vmstate` option and no `ram`
+column.
 
 ### Infrastructure Management
 
@@ -411,6 +500,295 @@ pyadm pve node list
 
 # Get node status and information
 pyadm pve node status nodename
+```
+
+## Kimai Module
+
+The Kimai module talks to the REST API of a [Kimai](https://www.kimai.org/) time tracking instance. Besides the everyday timesheet operations it can book recurring tasks onto a project in one go — a whole quarter of Saturday shifts, a daily stand-up for the next month, or just today's block of work.
+
+### Key Features
+- **Names instead of IDs**: projects and activities can be given by name or numeric ID
+- **Recurring bookings**: pick days by date, month, month range or date range, narrowed by weekday
+- **Presets**: store a recurring set of slots in the configuration and book it with one flag
+- **Idempotent**: identical entries that already exist are skipped, so a run can be repeated safely
+- **Dry run**: `--dry-run` shows exactly what would be created before anything is written
+- **Multi-instance support**: switch between instances with `--context/-c`
+
+### Setup
+
+Create an API token in Kimai (*Profile → API access*) and add a context:
+
+```ini
+[KIMAI_CONTEXT_work]
+name = work
+url = https://kimai.example.org
+api_token = kimai_pat_xxxxxxxxxxxxxxxx
+timezone = Europe/Berlin
+```
+
+```shell
+# Verify URL and credentials
+pyadm kimai ping
+
+# Instance and account information
+pyadm kimai version
+pyadm kimai me
+```
+
+### Master Data
+
+```shell
+# Customers, projects and activities
+pyadm kimai customers
+pyadm kimai projects
+pyadm kimai projects --customer ACME
+pyadm kimai activities --project "Support"
+
+# Tags and users
+pyadm kimai tags
+pyadm kimai users
+```
+
+Every listing takes `--json`/`-j` for raw API output and `--visibility visible|hidden|all`.
+
+### Timesheet Management
+
+```shell
+# Recent entries (default: last 7 days)
+pyadm kimai timesheet list
+pyadm kimai timesheet list --days 30 --project "Support"
+pyadm kimai timesheet list --from 2026-09-01 --to 2026-09-30
+
+# A single entry
+pyadm kimai timesheet show 4711
+
+# Add a finished entry
+pyadm kimai timesheet add -p "Support" -a "Maintenance" -b 09:00 -d 3h -m "Consulting"
+pyadm kimai timesheet add -p 42 -a 7 --date 2026-09-18 -b 09:00 -e 12:30
+
+# Live tracking
+pyadm kimai timesheet start -p "Support" -a "Maintenance"
+pyadm kimai timesheet active
+pyadm kimai timesheet stop
+pyadm kimai timesheet restart 4711
+
+# Remove entries
+pyadm kimai timesheet delete 4711 4712
+```
+
+### Recurring Bookings
+
+`pyadm kimai book` creates one or more slots on every selected day.
+
+**Slots** are given as `BEGIN-END` (`09:00-11:45`) or `BEGIN+DURATION` (`09:00+2h45m`), optionally followed by `|description`, and by `|project|activity` to override the command-wide project and activity for that slot. Durations accept `2h45m`, `90m`, `1.5h`, `2:45` or a plain number of minutes.
+
+**Days** are chosen with exactly one of `--date`, `--month`, `--start-month`/`--end-month` or `--from`/`--to` (default: today), and are narrowed with `--weekday` (`sat`, `mon-fri`, `weekdays`, `weekend`, `all`).
+
+```shell
+# A single block today
+pyadm kimai book -p "Support" -a "Maintenance" -b 09:00 -d 3h -m "Consulting"
+
+# Two blocks on every Saturday of a quarter
+pyadm kimai book -p "Support" -a "Maintenance" \
+    -s "09:00-11:45|Weekend shift 1" \
+    -s "11:45-14:30|Weekend shift 2" \
+    --start-month 2026-01 --end-month 2026-03 -w sat
+
+# A daily stand-up on working days of one month
+pyadm kimai book -p "Internal" -a "Meetings" -s "09:00+15m|Daily stand-up" \
+    --month 2026-10 -w weekdays
+
+# Different projects within one day
+pyadm kimai book -p "Support" -a "Maintenance" \
+    -s "09:00-12:00" \
+    -s "13:00-17:00|Rollout|Infrastructure|Deployment" \
+    --date 2026-09-21
+
+# Check first, book afterwards
+pyadm kimai book --preset saturday --month 2026-10 --dry-run
+pyadm kimai book --preset saturday --month 2026-10 -y
+```
+
+Useful flags: `--dry-run` (create nothing), `--yes/-y` (skip the confirmation), `--tags`, `--user-id` (book for someone else, needs permissions), `--timezone`, and `--no-duplicate-check` when an identical entry really should be created twice.
+
+### Booking Presets
+
+A recurring booking can be stored in the configuration as a `[BOOKING_<name>]` section and then booked by name. Command line options override the preset.
+
+```ini
+[BOOKING_saturday]
+project = Support
+activity = Maintenance
+# One slot per line (or comma separated)
+slots =
+    09:00-11:45|Weekend shift 1
+    11:45-14:30|Weekend shift 2
+weekdays = sat
+tags = maintenance,weekend
+
+[BOOKING_standup]
+project = Internal
+activity = Meetings
+slots = 09:00+15m|Daily stand-up
+weekdays = mon-fri
+```
+
+```shell
+# Show the configured presets
+pyadm kimai presets
+
+# Book all Saturdays of a quarter from the preset
+pyadm kimai book --preset saturday --start-month 2026-01 --end-month 2026-03
+
+# Same preset, but a different description for this run
+pyadm kimai book --preset standup --month 2026-10 -m "Team sync"
+```
+
+### Multi-Instance Usage
+
+```shell
+pyadm kimai context list
+pyadm kimai context use work
+pyadm kimai -c freelance timesheet list
+```
+
+## Uptime Kuma Module
+
+The Uptime Kuma module manages an [Uptime Kuma](https://uptime.kuma.pet/) instance: create monitors without clicking through the web UI, and schedule downtimes before a maintenance rather than muting alerts afterwards. Uptime Kuma has no REST API, so the module talks Socket.IO through the [`uptime-kuma-api`](https://github.com/lucasheld/uptime-kuma-api) package.
+
+**Server versions**: the package targets Uptime Kuma 1.21 - 1.23. Uptime Kuma 2.x kept the protocol but added database columns that must not be `NULL`, so a monitor written by the unmodified package is rejected by the backend (`NOT NULL constraint failed: monitor.conditions`). pyadm detects the server version and completes the payload, so monitors can be created and changed on 2.x as well. Should a future version want yet another field, the error names it instead of printing the failed SQL statement; `pyadm --debug` shows the original message.
+
+### Key Features
+- **Names instead of IDs**: monitors, notifications, tags and status pages can be given by name
+- **Quick downtimes**: `pyadm uptime downtime -m web -d 2h` silences monitors for a window
+- **Recurring maintenance**: weekly, monthly, interval and cron windows
+- **Dry run**: `--dry-run` shows what would be created before anything is written
+- **Multi-instance support**: switch between instances with `--context/-c`
+
+### Setup
+
+Add a context with the credentials of an Uptime Kuma user:
+
+```ini
+[UPTIME_CONTEXT_prod]
+name = prod
+url = https://uptime.example.org
+username = admin
+password = secret
+timezone = Europe/Berlin
+```
+
+```shell
+# Verify URL and credentials
+pyadm uptime ping
+
+# Instance information, notification providers, tags and status pages
+pyadm uptime info
+pyadm uptime notifications
+pyadm uptime tags
+pyadm uptime status-pages
+```
+
+### Monitors
+
+```shell
+# List monitors, with their last heartbeat
+pyadm uptime monitor list
+pyadm uptime monitor list --down
+pyadm uptime monitor list --type http --tag prod
+pyadm uptime monitor list -o id,name,target,status
+pyadm uptime monitor list --sort id --full
+
+# Find monitors by name, target or type
+pyadm uptime monitor search vpn
+pyadm uptime monitor search datenreisende.org -o id,name,target
+
+# One monitor in detail, and its recent heartbeats
+pyadm uptime monitor show web
+pyadm uptime monitor beats web --hours 6 --important
+
+# Create monitors
+pyadm uptime monitor add web --url https://example.org -N "Ops mail"
+pyadm uptime monitor add api --type keyword --url https://api.example.org \
+    --keyword '"status":"ok"' --interval 120
+pyadm uptime monitor add db --type port --hostname db.example.org --port 5432
+pyadm uptime monitor add gw --type ping --hostname 10.0.0.1 --tag network
+
+# Change, pause and remove
+pyadm uptime monitor edit web --interval 120 --retries 3
+pyadm uptime monitor pause web
+pyadm uptime monitor resume web
+pyadm uptime monitor delete old-host
+```
+
+`monitor search TERM` is the same listing with the search term as an argument - `monitor list -s TERM` does the same thing - and takes all filters of the listing.
+
+Monitors are sorted by name; `--sort id|name|type|status` changes that. Long targets are shortened to keep the columns aligned - `--full` prints them in full, and `--json`/`-j` is never shortened.
+
+`monitor add` and `monitor edit` share their options; `--type` selects what is checked (`http`, `keyword`, `json-query`, `port`, `ping`, `dns`, `docker`, `push`, `group`, ...) and the type-specific options are `--url`, `--hostname`/`--port`, `--keyword`, `--json-path`/`--expected-value` and `--dns-resolve-server`/`--dns-resolve-type`. An edit only changes the options you actually pass.
+
+### Downtimes
+
+`pyadm uptime downtime` is the shortcut for the common case: take monitors out of alerting for a while. It creates a one-off maintenance window.
+
+```shell
+# Two hours from now
+pyadm uptime downtime -m web -m api -d 2h
+
+# Tonight at 22:00 for 90 minutes
+pyadm uptime downtime -m web -s 22:00 -d 90m
+
+# An explicit window, announced on a status page
+pyadm uptime downtime -m db -s "2026-10-04 22:00" -e "2026-10-05 02:00" \
+    --status-page status -D "Database upgrade"
+
+# Check first
+pyadm uptime downtime -m web -d 30m --dry-run
+```
+
+Times are given as `now`, `HH:MM` (today, or tomorrow when that time has passed), `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`. Durations accept `2h`, `90m`, `1h30m` or `1:30`.
+
+### Maintenance Windows
+
+Everything else about maintenance lives under `pyadm uptime maintenance`, including the recurring strategies.
+
+```shell
+# What is scheduled
+pyadm uptime maintenance list
+pyadm uptime maintenance list --monitors
+pyadm uptime maintenance show "Patch night"
+
+# Every Saturday between 02:00 and 04:00
+pyadm uptime maintenance add "Patch night" -m web -m api \
+    --strategy recurring-weekday -w sat --window 02:00-04:00
+
+# First and last day of the month
+pyadm uptime maintenance add "Billing run" -m shop \
+    --strategy recurring-day-of-month --day 1 --day last --window 01:00-03:00
+
+# Every third day, and a cron window of 45 minutes
+pyadm uptime maintenance add "Backup" -m nas \
+    --strategy recurring-interval --interval-day 3 --window 23:00-23:30
+pyadm uptime maintenance add "Nightly" -m web \
+    --strategy cron --cron "30 3 * * *" -d 45m
+
+# A window that is ended by hand
+pyadm uptime maintenance add "Ad hoc" -m web --strategy manual
+
+# Pause, resume, remove
+pyadm uptime maintenance pause "Patch night"
+pyadm uptime maintenance resume "Patch night"
+pyadm uptime maintenance delete "Ad hoc"
+```
+
+A maintenance always needs at least one monitor (`-m/--monitor`, repeatable) - without monitors it silences nothing. `--status-page` additionally announces the window on a status page. Times are interpreted in the timezone of the context, overridable per command with `--timezone`; without either, the server timezone applies.
+
+### Multi-Instance Usage
+
+```shell
+pyadm uptime context list
+pyadm uptime context use prod
+pyadm uptime -c staging monitor list
 ```
 
 ## Configuration
@@ -448,6 +826,8 @@ colors = yes
 elastic = prod
 ldap = corp
 pve = homelab
+kimai = work
+uptime = prod
 
 [LDAP_CONTEXT_corp]
 name = corp
@@ -500,21 +880,68 @@ token_name = pyadm
 token_value = secret-token-value
 verify_ssl = true
 force_ipv4 = true
+
+[KIMAI_CONTEXT_work]
+name = work
+url = https://kimai.example.org
+api_token = kimai_pat_xxxxxxxxxxxxxxxx
+timezone = Europe/Berlin
+
+# Recurring booking preset for 'pyadm kimai book --preset saturday'
+[BOOKING_saturday]
+project = Support
+activity = Maintenance
+slots =
+    09:00-11:45|Weekend shift 1
+    11:45-14:30|Weekend shift 2
+weekdays = sat
+tags = maintenance,weekend
 ```
 
 ### Configuration Options
+
+**Kimai Settings** (`[KIMAI_CONTEXT_<name>]` sections):
+- `url` - Base URL of the Kimai instance (required)
+- `api_token` - API token for bearer authentication (Kimai 2.x, preferred)
+- `username` / `api_password` - Legacy authentication via the `X-AUTH-*` headers
+- `timezone` - Timezone the given times are interpreted in (default: system timezone)
+- `skip_tls_verify` - Skip TLS certificate verification (true/false, default: false)
+- `timeout` - Request timeout in seconds (default: 30)
+- `force_ipv4` - Only connect over IPv4 (true/false, default: false)
+
+**Uptime Kuma Settings** (`[UPTIME_CONTEXT_<name>]` sections):
+- `url` - Base URL of the Uptime Kuma instance (required)
+- `username` / `password` - Credentials of an Uptime Kuma user
+- `mfa_token` - Code of the authenticator app when the account uses 2FA
+- `token` - Token of an earlier login, as an alternative to username/password
+- `timezone` - Timezone maintenance windows are scheduled in (default: server timezone)
+- `skip_tls_verify` - Skip TLS certificate verification (true/false, default: false)
+- `timeout` - Connection timeout in seconds (default: 30)
+- `force_ipv4` - Only connect over IPv4 (true/false, default: false)
+
+**Booking Presets** (`[BOOKING_<name>]` sections, used by `pyadm kimai book --preset <name>`):
+- `project` / `activity` - Default project and activity (ID or name)
+- `slots` - Slot specifications, one per line or comma separated
+- `weekdays` - Weekday filter, e.g. `sat`, `mon-fri`, `weekend`
+- `description` - Description for slots that do not carry one
+- `tags` - Comma-separated tags
+- `timezone` - Timezone override for this preset
+- `user_id` - Book for another user (needs permissions)
 
 **General Settings** (`[GENERAL]` section):
 - `colors` - Colourise status and usage values (true/false, default: false)
 - `warn_percent` - Usage percentage that turns a value yellow (default: 80)
 - `crit_percent` - Usage percentage that turns a value red (default: 90)
+- `warn_days` - Snapshot age in days that turns it yellow (default: 7)
+- `crit_days` - Snapshot age in days that turns it red (default: 30)
 
-With `colors = yes`, two kinds of value are colourised:
+With `colors = yes`, three kinds of value are colourised:
 
-- **States** — Elasticsearch cluster health as green/yellow/red, and VM, container and node states as green (running, online), yellow (paused, suspended) or red (stopped, offline). A state pyadm does not recognise is left uncoloured rather than guessed at.
+- **States** — Elasticsearch cluster health as green/yellow/red, VM, container and node states as green (running, online), yellow (paused, suspended) or red (stopped, offline), and Uptime Kuma monitors as green (up), red (down), yellow (pending, paused) or blue (maintenance, because a planned window is not a fault). A state pyadm does not recognise is left uncoloured rather than guessed at.
 - **Usage** — anything measured as a share of a maximum: the Elasticsearch shard budget, and CPU, memory and disk on Proxmox. Green below `warn_percent`, yellow from there, red from `crit_percent`.
+- **Age** — how old a snapshot is. Uncoloured below `warn_days`, yellow from there, red from `crit_days`, so a forgotten snapshot stands out in a long list.
 
-Both thresholds can also be set in an individual context section to override the global value, as can `colors` itself. Colours are suppressed when the `NO_COLOR` environment variable is set, and dropped automatically when output is piped or redirected, so `--json` and shell pipelines stay clean.
+All four thresholds can also be set in an individual context section to override the global value, as can `colors` itself. Colours are suppressed when the `NO_COLOR` environment variable is set, and dropped automatically when output is piped or redirected, so `--json` and shell pipelines stay clean.
 
 Proxmox list and status commands report memory as `used (NN%)` rather than only the configured maximum, which is what makes the colouring meaningful:
 
@@ -640,6 +1067,8 @@ pyadm/
 │   ├── main.py              # Main CLI entry point
 │   ├── config.py            # Configuration management
 │   ├── config_commands.py   # Config CLI commands
+│   ├── table.py             # Shared list output (format, headers, JSON)
+│   ├── output.py            # Shared colouring of states and usage values
 │   ├── ldapcli/            # LDAP module
 │   │   ├── ldap.py         # LDAP client implementation
 │   │   ├── click_commands.py # LDAP CLI group
@@ -649,6 +1078,17 @@ pyadm/
 │   ├── elastic/            # Elasticsearch module
 │   │   ├── elastic.py      # Elasticsearch client
 │   │   └── click_commands.py # Elastic CLI commands
+│   ├── kimaicli/           # Kimai module
+│   │   ├── kimai.py        # Kimai REST API client
+│   │   ├── click_commands.py # Kimai CLI group and master data
+│   │   ├── timesheet_commands.py # Timesheet management
+│   │   ├── booking.py      # Slot, date and preset logic
+│   │   └── book_commands.py # Recurring booking command
+│   ├── uptimecli/         # Uptime Kuma module
+│   │   ├── uptime.py       # Uptime Kuma Socket.IO client
+│   │   ├── click_commands.py # Uptime CLI group and instance data
+│   │   ├── monitor_commands.py # Monitor management
+│   │   └── maintenance_commands.py # Maintenance windows and downtimes
 │   └── pvecli/            # Proxmox VE module
 │       ├── pve.py         # Proxmox client
 │       ├── pve_commands.py # Main PVE CLI group
@@ -662,6 +1102,14 @@ pyadm/
 ├── pyproject.toml
 └── requirements.txt
 ```
+
+### Conventions
+
+The repository conventions - module layout, list output, command options,
+configuration contexts - are written down in [AGENTS.md](AGENTS.md). The most
+visible one: **every listing goes through `pyadm.table`**, so all modules render
+tables the same way (tabulate's `simple` format, lower-case field names as
+headers, `--json`/`-j` for raw data, `--output`/`-o` to pick columns).
 
 ### Contributing Guidelines
 

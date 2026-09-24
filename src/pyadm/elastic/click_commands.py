@@ -3,7 +3,6 @@ import click
 import json
 import re
 
-from tabulate import tabulate
 
 from pyadm import output
 
@@ -11,6 +10,7 @@ from pyadm.elastic.elastic import ElasticSearch
 from pyadm.config import cluster_config
 from pyadm.context_utils import register_context_commands
 from pyadm.helper import Helper
+from pyadm.table import echo_json, echo_table, render_table, rows_from, select_fields
 
 defaults = {
     "url": "http://localhost:9200",
@@ -259,11 +259,8 @@ def shards(by_index, limit, as_json):
             if as_json:
                 click.echo(json.dumps(rows, indent=2))
                 return
-            if not rows:
-                click.echo("No shards found.")
-                return
             fields = ['index', 'shards', 'primaries', 'replicas', 'unassigned']
-            click.echo(tabulate([[r[f] for f in fields] for r in rows], headers=fields))
+            echo_table(rows_from(rows, fields), fields, empty="No shards found.")
             return
 
         capacity = client.get_shard_capacity()
@@ -317,7 +314,7 @@ def shards(by_index, limit, as_json):
                 ]
                 for row in sorted(node_rows, key=lambda r: -float(r.get('disk.percent') or 0))
             ]
-            click.echo(tabulate(table, headers=headers))
+            click.echo(render_table(table, headers))
 
         notes = []
         if unassigned:
@@ -344,35 +341,50 @@ def shards(by_index, limit, as_json):
         raise click.ClickException(f"An error occurred: {e}")
 
 
+# The columns of _cat/indices worth seeing at a glance. The rest (uuid, the
+# separate primary store size, ...) stays available through --output.
+INDEX_FIELDS = ['health', 'status', 'index', 'pri', 'rep', 'docs.count', 'store.size']
+
+
 @elastic.command("indices")
 @click.option('--limit', '-l', default=None, type=int, help='Limit the number of rows to display')
-@click.option('--output', '-o', type=click.Choice(['table', 'json']), default='table', help='Output format: table or json')
-def indices(limit, output):
+@click.option('--json', '-j', 'json_output', is_flag=True, help='Output as JSON')
+@click.option('--output', '-o', 'fields_option', default=None,
+              help='Comma-separated list of fields to display')
+def indices(limit, json_output, fields_option):
     """List all indices with detailed information.
-    
+
     Shows index names, document counts, sizes, health status, and other metrics
     in a comprehensive overview of your cluster's indices.
-    
+
     \b
     Examples:
-        pyadm elastic indices                   # Show all indices in table format
-        pyadm elastic indices --limit 10       # Show only first 10 indices
-        pyadm elastic indices --output json    # Output as JSON for scripting
+        pyadm elastic indices                      # Show all indices
+        pyadm elastic indices --limit 10           # Show only the first 10 indices
+        pyadm elastic indices --json               # Output as JSON for scripting
+        pyadm elastic indices -o index,docs.count  # Pick the columns yourself
     """
+    # Older versions took the format as '--output json'; keep that working
+    if fields_option and fields_option.strip().lower() == 'json':
+        json_output, fields_option = True, None
+
     data = get_es().list_indices()
-    if not data:
-        print("No indices found.")
-        return
-    # Apply the limit if provided
     if limit:
         data = data[:limit]
 
-    if output == "json":
-        print(json.dumps(data, indent=4))
-    else:
-        header = data[0].keys()
-        rows = [x.values() for x in data]
-        print(tabulate(rows, header, tablefmt="grid"))
+    if json_output:
+        echo_json(data)
+        return
+
+    fields = select_fields(fields_option, INDEX_FIELDS)
+    rows = []
+    for index in data:
+        row = []
+        for field in fields:
+            value = index.get(field, "")
+            row.append(output.cluster_status(value) if field == 'health' else value)
+        rows.append(row)
+    echo_table(rows, fields, empty="No indices found.")
 
 @elastic.command("reindex")
 @click.option('--index', '-i', 

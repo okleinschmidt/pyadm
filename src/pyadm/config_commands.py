@@ -12,7 +12,8 @@ def config_cli():
     """Manage pyadm configuration files and settings.
     
     Provides tools for creating, editing, validating, and managing configuration
-    files for LDAP, Elasticsearch/OpenSearch, and Proxmox VE connections.
+    files for LDAP, Elasticsearch/OpenSearch, Proxmox VE, Kimai and Uptime Kuma
+    connections.
     
     \b
     Examples:
@@ -108,6 +109,8 @@ crit_percent = 90
 elastic = prod
 ldap = corp
 pve = homelab
+kimai = work
+uptime = prod
 
 # ---------------------------
 # LDAP contexts
@@ -180,8 +183,65 @@ verify_ssl = false
 # not reachable: every new connection would otherwise block on its timeout.
 force_ipv4 = true
 
+# ---------------------------
+# Kimai contexts
+# ---------------------------
+[KIMAI_CONTEXT_work]
+name = work
+url = https://kimai.example.org
+# Kimai 2.x API token (Profile -> API access). Preferred.
+api_token = kimai_pat_xxxxxxxxxxxxxxxx
+# Legacy alternative for older instances (X-AUTH headers):
+# username = jdoe
+# api_password = secret
+# Timezone the times on the command line are interpreted in.
+# Defaults to the system timezone.
+timezone = Europe/Berlin
+skip_tls_verify = false
+timeout = 30
+
+# ---------------------------
+# Uptime Kuma contexts
+# ---------------------------
+[UPTIME_CONTEXT_prod]
+name = prod
+url = https://uptime.example.org
+# Uptime Kuma speaks Socket.IO, so a normal login is used.
+username = admin
+password = secret
+# Code of the authenticator app when the account uses 2FA:
+# mfa_token = 123456
+# Alternative: the token of an earlier login instead of username/password:
+# token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+# Timezone maintenance windows are scheduled in.
+# Defaults to the timezone of the Uptime Kuma server.
+timezone = Europe/Berlin
+skip_tls_verify = false
+timeout = 30
+
+# ---------------------------
+# Recurring booking presets for 'pyadm kimai book --preset <name>'
+# ---------------------------
+[BOOKING_saturday]
+project = Support
+activity = Maintenance
+# One slot per line (or comma separated):
+#   BEGIN-END or BEGIN+DURATION, optionally |description|project|activity
+slots =
+    09:00-11:45|Weekend shift 1
+    11:45-14:30|Weekend shift 2
+weekdays = sat
+tags = maintenance,weekend
+
+[BOOKING_standup]
+project = Internal
+activity = Meetings
+slots = 09:00+15m|Daily stand-up
+weekdays = mon-fri
+
 # Backward compatibility:
-# Existing sections like [LDAP], [LDAP_PROD], [ELASTIC], [ELASTIC_PROD], [PVE], [PVE_PROD]
+# Existing sections like [LDAP], [LDAP_PROD], [ELASTIC], [ELASTIC_PROD], [PVE], [PVE_PROD],
+# [KIMAI], [KIMAI_PROD], [UPTIME], [UPTIME_PROD]
 # continue to work and can also be selected via:
 # pyadm <module> context use <name-or-section>
 """

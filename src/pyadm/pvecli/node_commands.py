@@ -2,7 +2,7 @@ import click
 import json
 import sys
 import logging
-from tabulate import tabulate
+from pyadm.table import echo_table
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client
 from pyadm.pvecli.list_utils import sort_items, SortError, render_resource_table, format_uptime
 from pyadm.output import guest_status, usage
@@ -163,8 +163,8 @@ def list_tasks(node_name, limit, json_output):
                 task.get('id', '')
             ])
         
-        headers = ['UPID', 'Type', 'Status', 'Start Time', 'End Time', 'ID']
-        click.echo(tabulate(table_data, headers=headers))
+        headers = ['upid', 'type', 'status', 'starttime', 'endtime', 'id']
+        echo_table(table_data, headers, empty="No tasks found.")
         
     except Exception as e:
         logging.error(f"Error listing tasks: {e}")

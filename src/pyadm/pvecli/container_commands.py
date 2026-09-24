@@ -3,9 +3,10 @@ import json
 import sys
 import os
 import logging
-from tabulate import tabulate
+from pyadm.table import echo_table
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id, get_task_id
 from pyadm.pvecli.list_utils import sort_items, SortError, render_resource_table, format_uptime
+from pyadm.pvecli.snapshot_commands import register_snapshot_commands
 from pyadm.output import guest_status, usage
 
 
@@ -213,7 +214,7 @@ def list_templates(node, json_output):
             return
         
         # Create table data
-        headers = ['Name', 'Size', 'Format', 'Storage']
+        headers = ['name', 'size', 'format', 'storage']
         table_data = []
         for template in templates:
             # Extract the template name from the volid (format: storage:vztmpl/template.tar.gz)
@@ -231,7 +232,7 @@ def list_templates(node, json_output):
             table_data.append(row)
         
         # Print table
-        click.echo(tabulate(table_data, headers=headers))
+        echo_table(table_data, headers, empty="No templates found.")
         
     except Exception as e:
         logging.error(f"Error listing templates: {e}")
@@ -496,3 +497,7 @@ def config_container(ctid, node, set_configs, delete_configs, show, json_output)
     except Exception as e:
         logging.error(f"Error configuring container: {e}")
         raise click.ClickException(f"Error configuring container: {e}")
+
+
+# Snapshot handling is shared with VMs, so the commands are built centrally
+register_snapshot_commands(container, "container")

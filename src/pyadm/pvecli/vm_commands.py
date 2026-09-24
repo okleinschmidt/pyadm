@@ -1,8 +1,10 @@
 import json
-import click
 import logging
+
+import click
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client, selected_pve, resolve_resource_id, get_task_id
 from pyadm.pvecli.list_utils import sort_items, SortError, render_resource_table
+from pyadm.pvecli.snapshot_commands import register_snapshot_commands
 from pyadm.output import guest_status, usage
 
 
@@ -591,3 +593,7 @@ def config_vm(vmid, node, set_configs, delete_configs, show, json_output):
     except Exception as e:
         logging.error(f"Error configuring VM: {e}")
         raise click.ClickException(f"Error configuring VM: {e}")
+
+
+# Snapshot handling is shared with containers, so the commands are built centrally
+register_snapshot_commands(vm, "vm")

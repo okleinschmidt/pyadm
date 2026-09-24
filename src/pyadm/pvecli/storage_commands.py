@@ -2,7 +2,7 @@ import click
 import json
 import sys
 import logging
-from tabulate import tabulate
+from pyadm.table import echo_table
 from pyadm.pvecli.pve_commands import pvecli, get_pve_client
 from pyadm.pvecli.list_utils import sort_items, SortError
 
@@ -69,7 +69,7 @@ def list_storage(node, type, json_output, output, sort):
             table_data.append(row)
         
         # Print table
-        click.echo(tabulate(table_data, headers=fields))
+        echo_table(table_data, fields, empty="No storage found.")
         
     except Exception as e:
         logging.error(f"Error listing storage: {e}")
